@@ -1,18 +1,32 @@
 <template>
-  <div class="home">
-    <img alt="Vue logo" src="../assets/logo.png">
-    <HelloWorld msg="Welcome to Your Vue.js App"/>
-  </div>
+    <div class="home">
+        <h1>Home</h1>
+        <p>Create lobby</p>
+        <div class="settings">
+
+        </div>
+        <v-btn>create</v-btn>
+    </div>
 </template>
 
 <script>
-// @ is an alias to /src
-import HelloWorld from '@/components/HelloWorld.vue'
+    import SimpleDraw from "@/components/SimpleDraw";
 
-export default {
-  name: 'Home',
-  components: {
-    HelloWorld
-  }
-}
+    export default {
+        name: 'Home',
+        components: {SimpleDraw},
+        data: () => ({
+            activePlayer: 'someone',
+        }),
+    }
 </script>
+<style scoped>
+    .draw {
+        width: 800px;
+        height: 500px;
+        background-color: rgba(255, 255, 255, 0.25);
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.3);
+    }
+</style>

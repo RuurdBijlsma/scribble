@@ -1,32 +1,29 @@
 <template>
-  <div id="app">
-    <div id="nav">
-      <router-link to="/">Home</router-link> |
-      <router-link to="/about">About</router-link>
-    </div>
-    <router-view/>
-  </div>
+    <v-app class="app">
+        <v-content class="app-content">
+            <router-view/>
+        </v-content>
+    </v-app>
 </template>
 
+<script>
+
+    export default {
+        name: 'App',
+
+        components: {},
+
+        data: () => ({
+            //
+        }),
+    };
+</script>
 <style>
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-}
+    html, body {
+        overflow-y: auto;
+    }
 
-#nav {
-  padding: 30px;
-}
-
-#nav a {
-  font-weight: bold;
-  color: #2c3e50;
-}
-
-#nav a.router-link-exact-active {
-  color: #42b983;
-}
+    .app-content {
+        background: linear-gradient(0deg, rgba(63, 215, 206, 1) 0%, rgba(244, 0, 255, 1) 100%);
+    }
 </style>
