@@ -58,9 +58,6 @@
                 // this.mesh.broadcast(['change', {data: 'data'}])
             },
         },
-        onBeforeDestroy() {
-            this.mesh.destroy();
-        }
     }
 </script>
 <style scoped>
