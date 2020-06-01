@@ -18,6 +18,7 @@
     // -> host starts game, everyone goes to domain.com/play (vuex will remember game id)
     // -> everyone plays game :)
     //* Play game page
+    //* Don't take pageX, take screenx or something for simple-draw
 
     export default {
         name: 'App',
