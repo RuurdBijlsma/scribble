@@ -27,7 +27,7 @@
             settings: null,
         }),
         async mounted() {
-            let socket = await this.$store.state.mesh.connect('http://localhost:3000');
+            let socket = await this.$store.state.mesh.connect('https://api.ruurd.dev');
             this.$store.commit('socket', socket);
             console.log(socket);
 

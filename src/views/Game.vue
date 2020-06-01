@@ -19,7 +19,7 @@
             mesh: new SimplePeerMesh('scribble')
         }),
         async mounted() {
-            let socket = await this.mesh.connect('http://localhost:3000');
+            let socket = await this.mesh.connect('https://api.ruurd.dev');
 
             this.me = socket.id;
             this.host = this.$route.query.host === 'true';
