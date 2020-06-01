@@ -7,6 +7,17 @@
 </template>
 
 <script>
+    //todo:
+    //* A lot
+    //* Flow: go to domain.com
+    // -> click join game or start game
+    // -> click start game (go to domain.com/lobby) / click join game, fill in code (and go to domain.com/lobby?game=)
+    // -> you instantly start a party
+    // -> share link, someone joins as non-host
+    // -> you change settings, you both change avatar and username
+    // -> host starts game, everyone goes to domain.com/play (vuex will remember game id)
+    // -> everyone plays game :)
+    //* Play game page
 
     export default {
         name: 'App',

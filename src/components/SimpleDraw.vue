@@ -1,6 +1,9 @@
 <template>
     <div class="simple-draw">
-        <div class="canvas-container" @keypress="handleKey">
+        <div class="canvas-container"
+             @keypress="handleKey"
+             :style="`height: calc(100% - ${showControls ? 80 : 0}px)`"
+        >
             <canvas class="canvas"
                     ref="canvas"
                     :width="canvasWidth"
@@ -8,11 +11,12 @@
                     @touchstart="startTouch"
                     @mousedown="startMove"
                     @resize="canvasResize"
+                    @contextmenu="preventContext"
             >
                 Canvas is not supported
             </canvas>
         </div>
-        <div class="controls">
+        <div class="controls" v-if="showControls">
             <div class="colors">
                 <div class="selected-color" :style="`background-color: ${activeRgb}`"></div>
                 <div class="color-grid">
@@ -65,6 +69,14 @@
                 type: Boolean,
                 default: false,
             },
+            showControls: {
+                type: Boolean,
+                default: true,
+            },
+            brushSize: {
+                type: Number,
+                default: 13,
+            },
         },
         data: () => ({
             activeTool: 'brush',
@@ -109,6 +121,7 @@
         }),
         mounted() {
             console.log(CommandStack);
+            this.activeBrush = this.brushSize;
 
             let canvas = this.$refs.canvas;
             this.context = canvas.getContext('2d');
@@ -136,8 +149,9 @@
             CommandStack.reset();
         },
         methods: {
-            test(n) {
-                console.log(n);
+            preventContext(e) {
+                e.preventDefault();
+                return false;
             },
             render() {
                 // console.log('render', this.readOnly);
@@ -171,46 +185,46 @@
                 }
                 this.animationId = requestAnimationFrame(this.render);
             },
-            startTool(x, y, finger) {
-                if (this.activeTool === 'brush') {
+            startTool(x, y, finger, tool = this.activeTool, brushSize = this.activeBrush) {
+                if (tool === 'brush') {
                     let line = [[x, y]];
                     let drawable = {
                         type: 'line',
-                        brush: this.activeBrush,
+                        brush: brushSize,
                         color: this.activeColor,
                         line,
                     };
                     finger.drawable = drawable;
                     this.drawables.push(drawable);
-                } else if (this.activeTool === 'eraser') {
+                } else if (tool === 'eraser') {
                     let line = [[x, y]];
                     let drawable = {
                         type: 'line',
-                        brush: this.activeBrush,
+                        brush: brushSize,
                         color: [255, 255, 255, 255],
                         line,
                     };
                     finger.drawable = drawable;
                     this.drawables.push(drawable);
-                } else if (this.activeTool === 'fill') {
+                } else if (tool === 'fill') {
                     let now = performance.now();
                     this.fill3(x, y, this.activeColor);
                     console.log("fill done", performance.now() - now);
                 }
             },
-            moveTool(x, y, finger) {
-                if (this.activeTool === 'brush' || this.activeTool === 'eraser') {
+            moveTool(x, y, finger, tool = this.activeTool) {
+                if (tool === 'brush' || this.activeTool === 'eraser') {
                     finger.drawable.line.push([x, y]);
-                } else if (this.activeTool === 'fill') {
+                } else if (tool === 'fill') {
                     console.log("fill move");
                 }
             },
-            endTool(x, y, finger) {
-                if (this.activeTool === 'brush' || this.activeTool === 'eraser') {
+            endTool(x, y, finger, tool = this.activeTool) {
+                if (tool === 'brush' || this.activeTool === 'eraser') {
                     finger.drawable.line.push([x, y]);
                     CommandStack.addCommand(new DrawableCommand(this.drawables, finger.drawable));
                     delete finger.drawable;
-                } else if (this.activeTool === 'fill') {
+                } else if (tool === 'fill') {
                     console.log("fill end");
                 }
             },
@@ -417,7 +431,7 @@
                 this.$refs.canvas.style.cursor = `url(${url}) ${Math.floor(canvas.width / 2)} ${Math.floor(canvas.height / 2)}, auto`;
             },
             handleKey(e) {
-                if (this.readOnly) return;
+                if (this.readOnly || !this.showControls) return;
 
                 if (e.code === 'KeyZ' && e.ctrlKey && e.shiftKey)
                     CommandStack.redo();
@@ -442,7 +456,8 @@
                 let {top, left} = this.$refs.canvas.getBoundingClientRect();
                 let x = e.pageX - left;
                 let y = e.pageY - top;
-                this.startTool(x, y, finger);
+                let tool = e.button === 2 ? 'eraser' : this.activeTool;
+                this.startTool(x, y, finger, tool, e.button === 2 ? this.activeBrush * 3 : this.activeBrush);
             },
             move(e, fingerIndex = 0) {
                 if (this.readOnly) return;
@@ -451,7 +466,8 @@
                     let {top, left} = this.$refs.canvas.getBoundingClientRect();
                     let x = e.pageX - left;
                     let y = e.pageY - top;
-                    this.moveTool(x, y, this.fingers[fingerIndex]);
+                    let tool = e.button === 2 ? 'eraser' : this.activeTool;
+                    this.moveTool(x, y, this.fingers[fingerIndex], tool);
                 }
             },
             endMove(e, fingerIndex = 0) {
@@ -462,7 +478,8 @@
                         let {top, left} = this.$refs.canvas.getBoundingClientRect();
                         let x = e.pageX - left;
                         let y = e.pageY - top;
-                        this.endTool(x, y, this.fingers[fingerIndex]);
+                        let tool = e.button === 2 ? 'eraser' : this.activeTool;
+                        this.endTool(x, y, this.fingers[fingerIndex], tool);
                     }
                     this.fingers[fingerIndex].down = false;
                 }
@@ -502,7 +519,10 @@
             },
             updateCanvas() {
                 this.canvasResize();
-            }
+            },
+            brushSize() {
+                this.activeBrush = this.brushSize;
+            },
         },
         computed: {
             activeRgb() {
@@ -514,7 +534,7 @@
 
 <style scoped>
     .simple-draw {
-        min-width: 610px;
+        /*min-width: 610px;*/
     }
 
     .canvas {

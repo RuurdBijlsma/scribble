@@ -200,7 +200,7 @@ export default class SimplePeerMesh extends EventEmitter {
         peer.on('connect', () => {
             let peerCount = this.getConnectedPeerCount();
             this.log('New peer connection, peer count: ', peerCount);
-            console.log(peer, 'connect');
+            // console.log(peer, 'connect');
             this.emit('connect', socketId);
             this.checkFullConnect();
         });

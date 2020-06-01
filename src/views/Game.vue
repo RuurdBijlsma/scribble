@@ -1,5 +1,5 @@
 <template>
-    <div class="home">
+    <div class="create-user">
         <video v-if="!host" ref="streamViewer" controls autoplay class="stream-viewer" width="800" height="420"/>
         <simple-draw v-show="host" class="draw" @change="sendChange" ref="simpleDraw" :updateCanvas="host"/>
     </div>
