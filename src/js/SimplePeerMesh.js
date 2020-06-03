@@ -245,6 +245,7 @@ export default class SimplePeerMesh extends EventEmitter {
     }
 
     destroy() {
+        this.removeAllListeners();
         this.socket.close();
         for (let peer in this.peers)
             if (this.peers.hasOwnProperty(peer)) {

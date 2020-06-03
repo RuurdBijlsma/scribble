@@ -118,6 +118,7 @@
             canvasHeight: 10,
             commands: [],
             commandIndex: 0,
+            shouldPreventContext: false,
         }),
         mounted() {
             console.log(CommandStack);
@@ -133,6 +134,8 @@
             document.addEventListener('touchmove', this.moveTouch, false);
             document.addEventListener('mouseup', this.endMove, false);
             document.addEventListener('touchend', this.endTouch, false);
+
+            document.addEventListener('contextmenu', this.preventContext, false);
 
             this.updateCursor(this.activeBrush, this.activeColor, this.activeTool);
             this.canvasResize();
@@ -150,8 +153,10 @@
         },
         methods: {
             preventContext(e) {
-                e.preventDefault();
-                return false;
+                if (this.shouldPreventContext) {
+                    e.preventDefault();
+                    return false;
+                }
             },
             render() {
                 // console.log('render', this.readOnly);
@@ -448,6 +453,7 @@
             },
             startMove(e, fingerIndex = 0) {
                 if (this.readOnly) return;
+                this.shouldPreventContext = true;
 
                 if (!this.fingers[fingerIndex])
                     this.fingers[fingerIndex] = {};
@@ -472,6 +478,9 @@
             },
             endMove(e, fingerIndex = 0) {
                 if (this.readOnly) return;
+                setTimeout(()=>{
+                    this.shouldPreventContext = false;
+                }, 50);
 
                 if (this.fingers[fingerIndex]) {
                     if (this.fingers[fingerIndex].down) {

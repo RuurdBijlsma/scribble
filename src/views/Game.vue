@@ -1,63 +1,43 @@
 <template>
     <div class="create-user">
+        <div class="users">
+            <div v-for="user in everyone">
+                <img :src="user.avatar" alt="User avatar">
+                <p v-if="user.name">{{user.name}}</p>
+                <p v-else><i>Unnamed</i></p>
+            </div>
+        </div>
         <video v-if="!host" ref="streamViewer" controls autoplay class="stream-viewer" width="800" height="420"/>
-        <simple-draw v-show="host" class="draw" @change="sendChange" ref="simpleDraw" :updateCanvas="host"/>
+        <simple-draw v-show="host" class="draw" ref="simpleDraw" :updateCanvas="host"/>
     </div>
 </template>
 
 <script>
     import SimpleDraw from "@/components/SimpleDraw";
-    import SimplePeerMesh from "@/js/SimplePeerMesh";
 
     export default {
         name: 'Home',
         components: {SimpleDraw},
         data: () => ({
-            me: '',
             host: false,
-            activePlayer: '',
-            mesh: new SimplePeerMesh('scribble')
+            settings: null,
+            me: null,
+            others: [],
+            everyone: [],
+            activePlayer: null,
         }),
         async mounted() {
-            let socket = await this.mesh.connect('https://api.ruurd.dev');
+            this.host = this.$store.state.game.host;
+            this.settings = this.$store.state.game.settings;
+            this.me = this.$store.state.game.me;
+            this.others = this.$store.state.game.others;
+            this.everyone = [this.me, ...this.others];
 
-            this.me = socket.id;
-            this.host = this.$route.query.host === 'true';
-            console.log(this.host);
-            this.activePlayer = this.me;
+            if (this.host) {
 
-            this.mesh.on('data', (id, data) => {
-                // if (this.activePlayer === id)
-                this.updateCanvas(data);
-            });
-
-            this.mesh.on('stream', (id, stream) => {
-                let video = this.$refs.streamViewer;
-                video.srcObject = stream;
-                console.log("set sourc object");
-                video.oncanplay = async () => {
-                    await video.play();
-                    console.log('received stream', video, id, stream);
-                }
-            });
-
-            await this.mesh.join('bye', false);
-
-            this.start();
+            }
         },
-        methods: {
-            start() {
-                if (this.host) {
-                    let draw = this.$refs.simpleDraw;
-                    let canvas = draw.$refs.canvas;
-                    let stream = canvas.captureStream();
-                    this.mesh.broadcastStream(stream)
-                }
-            },
-            sendChange() {
-                // this.mesh.broadcast(['change', {data: 'data'}])
-            },
-        },
+        methods: {},
     }
 </script>
 <style scoped>

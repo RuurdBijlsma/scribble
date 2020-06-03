@@ -9,6 +9,8 @@
                    autoplay/>
             <p v-if="user.name">{{user.name}}</p>
             <p v-else><i>Unnamed</i></p>
+            <v-btn v-if="host && me !== user" color="error" @click="$emit('kick', user)">Kick</v-btn>
+            <v-btn v-else-if="host" text disabled>Me</v-btn>
         </div>
     </div>
 </template>
@@ -17,6 +19,14 @@
     export default {
         name: "LobbyUsers",
         props: {
+            me: {
+                type: Object,
+                default: null,
+            },
+            host: {
+                type: Boolean,
+                default: false,
+            },
             users: {
                 type: Array,
                 default: [],
@@ -43,13 +53,30 @@
                         }
                     }, 300);
                 }
-            }
+            },
+            getUsers() {
+                let users = this.users;
+                for (let i = 0; i < users.length; i++) {
+                    let video = this.$refs.videos[i];
+
+                    let canvas = document.createElement('canvas');
+                    let context = canvas.getContext('2d');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    console.log({video});
+                    context.drawImage(video, 0, 0);
+
+                    users[i].avatar = canvas.toDataURL();
+                    users[i].me = false;
+                }
+                this.me.me = true;
+                return users;
+            },
         },
         watch: {
             users: {
                 deep: true,
                 handler() {
-                    console.log("users change")
                 }
             }
         }
