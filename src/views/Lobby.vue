@@ -3,11 +3,11 @@
         <h1>Game lobby - {{$route.query.game}}</h1>
         <p>Share the link with others to invite them</p>
         <div class="settings">
-            <lobby-settings :read-only="!host" ref="settings" @change="updateSettings" :updateSettings="settings"/>
-            <create-user :read-only="!host" ref="createUser" @userChange="updateUserName"/>
-            <lobby-users class="lobby-users" ref="lobbyUsers" :users="users" :me="meInfo" :host="host" @kick="kick"/>
+            <lobby-settings :read-only="!me.host" ref="settings" @change="updateSettings" :updateSettings="settings"/>
+            <create-user :read-only="!me.host" ref="createUser" @userChange="updateUserName"/>
+            <lobby-users class="lobby-users" ref="lobbyUsers" :users="users" :me="me" @kick="kick"/>
         </div>
-        <v-btn color="primary" v-if="host" @click="createLobby">Create lobby</v-btn>
+        <v-btn color="primary" v-if="me.host" @click="createLobby">Create lobby</v-btn>
     </div>
 </template>
 
@@ -16,135 +16,160 @@
     import CreateUser from "@/components/CreateUser";
     import LobbySettings from "@/components/LobbySettings";
     import LobbyUsers from "@/components/LobbyUsers";
+    import User from "@/js/User";
 
     export default {
         name: 'Home',
         components: {LobbyUsers, LobbySettings, CreateUser, SimpleDraw},
         data: () => ({
-            host: false,
             users: [],
-            meInfo: {name: ''},
+            me: new User({me: true}),
             settings: null,
+            mesh: null,
+            hostInterval: -1,
         }),
         async mounted() {
-            console.log("MESH", this.$store.state.mesh);
-            let socket = await this.$store.state.mesh.connect('https://api.ruurd.dev');
+            this.mesh = this.$store.state.mesh;
+            console.log("MESH", this.mesh);
+            let socket = await this.mesh.connect('https://api.ruurd.dev');
             this.$store.commit('socket', socket);
             console.log(socket);
 
-            this.meInfo.id = socket.id;
-            this.meInfo.stream = this.$refs.createUser.getUser().stream;
-            this.users.push(this.meInfo);
+            this.me.id = socket.id;
+            this.me.stream = this.$refs.createUser.getStream();
+            this.users.push(this.me);
 
-            if (this.$route.query.hasOwnProperty('game')) {
-                this.host = false;
-            } else {
+            if (!this.$route.query.hasOwnProperty('game')) {
                 console.log("HOST");
-                this.host = true;
+                this.me.host = true;
                 let gameId = (Math.floor(Math.random() * 1679616)).toString(36).padStart(4, '0').toUpperCase();
                 await this.$router.replace({query: {game: gameId}});
             }
             //TEMP::::
-            // this.host = this.$route.query.host === 'true';
+            // this.me.host = this.$route.query.host === 'true';
             let gameId = this.$route.query.game;
 
-            let users = {};
-            this.$store.state.mesh.on('connect', id => {
-                if (!users[id]) {
-                    users[id] = {id, stream: null, name: ''};
-                    this.users.push(users[id]);
+            let userMap = {};
+            this.mesh.on('connect', id => {
+                if (!userMap[id]) {
+                    userMap[id] = new User({id});
+                    this.users.push(userMap[id]);
                 }
                 console.log("userinfo", id, 'connect');
 
-                let user = this.$refs.createUser.getUser();
-                this.$store.state.mesh.send(id, ['user', user.name]);
+                this.mesh.send(id, ['user', this.me]);
                 let settings = this.$refs.settings.getSettings();
-                this.$store.state.mesh.send(id, ['settings', settings]);
+                this.mesh.send(id, ['settings', settings]);
+
             });
 
-            this.$store.state.mesh.on('disconnect', id => {
-                delete users[id];
+            this.mesh.on('fullConnect', () => {
+                console.log("FUlly connected");
+                this.hostInterval = setInterval(() => {
+                    this.chooseNewHost();
+                }, 1000);
+            });
+
+            this.mesh.on('disconnect', id => {
+                delete userMap[id];
                 let userInfo = this.users.find(u => u.id === id);
                 this.users.splice(this.users.indexOf(userInfo), 1);
+
+                console.log("Disconnect trigger");
+                this.chooseNewHost();
             });
 
-            this.$store.state.mesh.on('stream', (id, stream) => {
-                if (!users[id]) {
-                    users[id] = {id, stream: null, name: ''};
-                    this.users.push(users[id]);
+            this.mesh.on('stream', (id, stream) => {
+                if (!userMap[id]) {
+                    userMap[id] = new User({id});
+                    this.users.push(userMap[id]);
                 }
-                users[id].stream = stream;
+                userMap[id].stream = stream;
                 console.log("userinfo", id, 'stream', stream);
             });
 
-            this.$store.state.mesh.on('data', (id, data) => {
-                if (!users[id]) {
-                    users[id] = {id, stream: null, name: ''};
-                    this.users.push(users[id]);
+            this.mesh.on('data', (id, data) => {
+                if (!userMap[id]) {
+                    userMap[id] = new User({id});
+                    this.users.push(userMap[id]);
                 }
                 let [type, ...params] = JSON.parse(data);
                 console.log("userinfo", id, 'data', type, params);
                 if (type === 'user') {
-                    users[id].name = params[0];
+                    userMap[id].name = params[0].name;
+                    userMap[id].host = params[0].host;
                 } else if (type === 'settings') {
-                    if (!this.host)
+                    if (!this.me.host)
                         this.settings = params[0];
                 } else if (type === 'kicked') {
                     // console.log('kicked', params);
                     this.$router.push('/kicked?msg=' + params[0]);
                 } else if (type === 'start') {
+                    userMap[id].host = true;
                     this.createLobby();
                 }
                 console.log("userinfo", id, 'data', type, params);
             });
 
-            await this.$store.state.mesh.join(gameId, true);
+            await this.mesh.join(gameId, true);
             console.log("Joined room", gameId);
-            this.$store.state.mesh.broadcastStream(this.meInfo.stream);
+            this.mesh.broadcastStream(this.me.stream);
         },
         methods: {
+            chooseNewHost() {
+                //Check if there isn't a host connected already
+                if (this.users.findIndex(user => user.host) === -1 && this.mesh.isFullyConnected()) {
+                    console.log(this.users, JSON.stringify(this.users));
+                    let newHost = this.users.sort((a, b) => a.id > b.id ? 1 : -1)[0];
+                    newHost.host = true;
+                    console.log("Host disconnected, migrating host", newHost);
+                }
+            },
             kick(user) {
-                if (user === this.meInfo) {
+                if (user === this.me) {
                     return;
                 }
 
                 let index = this.users.indexOf(user);
                 if (index > -1) {
-                    this.$store.state.mesh.send(user.id, ['kicked', 'lmao get fukt']);
+                    this.mesh.send(user.id, ['kicked', 'lmao get fukt']);
                     this.users.splice(index, 1);
                 }
             },
             updateSettings(settings) {
-                if (this.host)
-                    this.$store.state.mesh.broadcast(['settings', settings]);
+                if (this.me.host)
+                    this.mesh.broadcast(['settings', settings]);
             },
             updateUserName(user) {
-                this.meInfo.name = user;
-                this.$store.state.mesh.broadcast(['user', user]);
+                this.me.name = user;
+                this.mesh.broadcast(['user', this.me]);
             },
             createLobby() {
                 let settings = this.$refs.settings.getSettings();
                 let users = this.$refs.lobbyUsers.getUsers();
-                console.log(users);
+                let {avatar} = this.$refs.createUser.getUser();
+                this.me.avatar = avatar;
                 this.$store.commit('game', {
-                    host: this.host,
-                    me: this.meInfo,
+                    me: this.me,
                     others: users.filter(user => user.me === false),
                     settings,
                 });
-                this.$store.state.mesh.broadcastRemoveStream(this.meInfo.stream);
-                if (this.host) {
-                    this.$store.state.mesh.broadcast(['start', settings]);
-                }
+                this.mesh.broadcastRemoveStream(this.me.stream);
                 //Remove all listeners used on this page
-                this.$store.state.mesh.removeAllListeners();
+                this.mesh.removeAllListeners();
                 this.$router.push('/game');
                 // console.log(gameId);
             }
         },
-        onBeforeDestroy(){
-            this.$store.state.mesh.destroy();
-        }
+        watch: {
+            me(val, old) {
+                console.log("ME CHANGED from old to new", old, val);
+            }
+        },
+        onBeforeDestroy() {
+            this.mesh.destroy();
+            clearInterval(this.hostInterval);
+        },
     }
 </script>
 <style scoped>

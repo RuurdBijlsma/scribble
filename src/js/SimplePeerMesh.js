@@ -237,11 +237,13 @@ export default class SimplePeerMesh extends EventEmitter {
     }
 
     checkFullConnect() {
+        if (this.isFullyConnected())
+            this.emit('fullConnect');
+    }
+
+    isFullyConnected() {
         let peerCount = this.getConnectedPeerCount();
-        if (peerCount + 1 >= this.roomCount) {
-            this.log('Fully connected to room, peer count: ', peerCount, 'room count: ', this.roomCount);
-            this.emit('fullConnect')
-        }
+        return peerCount + 1 >= this.roomCount;
     }
 
     destroy() {

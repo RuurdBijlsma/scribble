@@ -9,8 +9,8 @@
                    autoplay/>
             <p v-if="user.name">{{user.name}}</p>
             <p v-else><i>Unnamed</i></p>
-            <v-btn v-if="host && me !== user" color="error" @click="$emit('kick', user)">Kick</v-btn>
-            <v-btn v-else-if="host" text disabled>Me</v-btn>
+            <v-btn v-if="me.host && me !== user" color="error" @click="$emit('kick', user)">Kick</v-btn>
+            <v-btn v-else-if="me.host" text disabled>Me</v-btn>
         </div>
     </div>
 </template>
@@ -22,10 +22,6 @@
             me: {
                 type: Object,
                 default: null,
-            },
-            host: {
-                type: Boolean,
-                default: false,
             },
             users: {
                 type: Array,
@@ -74,11 +70,11 @@
             },
         },
         watch: {
-            users: {
-                deep: true,
-                handler() {
-                }
-            }
+            // users: {
+            //     deep: true,
+            //     handler() {
+            //     }
+            // }
         }
     }
 </script>

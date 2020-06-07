@@ -152,6 +152,9 @@
             CommandStack.reset();
         },
         methods: {
+            getStream() {
+                return this.$refs.canvas.captureStream();
+            },
             preventContext(e) {
                 if (this.shouldPreventContext) {
                     e.preventDefault();
@@ -478,7 +481,7 @@
             },
             endMove(e, fingerIndex = 0) {
                 if (this.readOnly) return;
-                setTimeout(()=>{
+                setTimeout(() => {
                     this.shouldPreventContext = false;
                 }, 50);
 

@@ -4,7 +4,7 @@
         <simple-draw class="draw-avatar" :show-controls="false" :brush-size="7" ref="draw"/>
         <v-text-field :rules="rules"
                       label="Username"
-                      v-model="user"
+                      v-model="userName"
                       outlined
                       name="username"/>
     </div>
@@ -23,24 +23,24 @@
             },
         },
         data: () => ({
-            user: '',
+            userName: '',
             rules: [v => v.length <= 25 || 'Max 25 characters'],
         }),
         mounted() {
         },
         methods: {
+            getStream() {
+                return this.$refs.draw.getStream();
+            },
             getUser() {
-                return {
-                    image: this.$refs.draw.$refs.canvas.toDataURL(),
-                    user: this.user,
-                    stream: this.$refs.draw.$refs.canvas.captureStream()
-                };
+                let avatar = this.$refs.draw.$refs.canvas.toDataURL();
+                return {name: this.userName, avatar};
             },
         },
         watch: {
             user(val, old) {
-                this.user = val.substr(0, 25);
-                this.$emit('userChange', this.user);
+                this.userName = val.substr(0, 25);
+                this.$emit('userChange', this.userName);
             }
         }
     }
