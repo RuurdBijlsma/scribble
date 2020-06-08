@@ -23,7 +23,7 @@
                 </div>
                 <div class="time-left-bar"
                      v-if="settings"
-                     :style="`width:calc(${Math.ceil(timeLeft / settings.time * 1000)/10}%)`"></div>
+                     :style="`width:calc(${Math.ceil(timeLeft / settings.time * 1000)/10}% - 20px)`"></div>
                 <div class="draw-content">
                     <video :srcObject.prop="activePlayer !== null ? activePlayer.stream : null"
                            v-if="activePlayer !== me"
@@ -53,7 +53,8 @@
                             <span :style="`color: ${stringToColor(message.user.id)}`"
                                   class="chat-message-user">{{message.user.name}}</span>
                             <span class="chat-message-text" v-if="message.type==='guess'">{{message.text}}</span>
-                            <span class="chat-message-correct" v-else-if="message.type==='correct'">Guessed correctly!</span>
+                            <span class="chat-message-correct"
+                                  v-else-if="message.type==='correct'">Guessed correctly!</span>
                         </p>
                     </div>
                     <v-text-field placeholder="Make guess" class="chat-field" auto filled v-model="chatText"/>
@@ -96,7 +97,7 @@
         async mounted() {
             console.log('-------------{MOUNTED}--------------');
             //debug
-            if (true) {
+            if (false) {
                 this.$store.commit('game', {
                     host: true,
                     me: new User({
@@ -144,6 +145,7 @@
                         break;
                     case 'word':
                         this.setGuessWord(params[0]);
+                        this.generalStartRoundAfterWordChoice();
                         break;
                     case 'wordHint':
                         this.setWordHint(params[0]);
@@ -197,6 +199,12 @@
                 this.currentRound++;
                 this.activePlayer = player;
                 this.timeLeft = this.settings.time;
+
+                if (this.activePlayer === this.me) {
+                    this.chooseWord();
+                }
+            },
+            async generalStartRoundAfterWordChoice() {
                 let roundStartTime = performance.now();
                 let interval;
                 interval = setInterval(() => {
@@ -208,12 +216,10 @@
                     }
                 }, 50);
                 this.roundIntervals.push(interval);
-                if (this.activePlayer === this.me) {
-                    this.chooseWord();
-                }
             },
             //Only call this on the person that is drawing this round
             async startRound(chosenWord) {
+                this.generalStartRoundAfterWordChoice();
                 this.choosingWord = false;
                 console.log("[startRound]");
                 this.mesh.broadcast(['word', chosenWord]);
@@ -310,7 +316,7 @@
                         type: 'correct',
                         user,
                     });
-                }else{
+                } else {
                     this.chatMessages.push({
                         id: Math.floor(Math.random() * 1000000),
                         type: 'guess',
@@ -385,6 +391,7 @@
 
     .word {
         font-size: 30px;
+        letter-spacing: 3px;
     }
 
     .time-left, .round-info {
@@ -511,7 +518,7 @@
 
     .chat-message-correct {
         font-style: italic;
-        color:lime;
+        color: lime;
         background-color: white;
         border-radius: 4px;
         padding: 3px 7px;

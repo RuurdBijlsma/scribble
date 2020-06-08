@@ -9,17 +9,17 @@
 
 <script>
     //todo:
-    //* A lot
-    //* Flow: go to domain.com
-    // -> click join game or start game
-    // -> click start game (go to domain.com/lobby) / click join game, fill in code (and go to domain.com/lobby?game=)
-    // -> you instantly start a party
-    // -> share link, someone joins as non-host
-    // -> you change settings, you both change avatar and username
-    // -> host starts game, everyone goes to domain.com/play (vuex will remember game id)
-    // -> everyone plays game :)
-    //* Play game page
-    //* Don't take pageX, take screenx or something for simple-draw
+    // * Create end of round screen with points added per person and the correct word
+    // * When everyone guessed correctly, show end of round screen
+    // * When time runs out show end of round screen
+    // * Improve information shown in users thing in game page
+    // * Add sounds
+    // * Add next round after end round screen
+    // * Add game overview when all rounds are complete
+    //Far away todo:
+    // * Room browser (allow public lobbies)
+    // * No more bugs :)
+    // * Get words from chat guesses?
 
     export default {
         name: 'App',
