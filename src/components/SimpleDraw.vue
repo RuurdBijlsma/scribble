@@ -94,7 +94,7 @@
                     [35, 31, 211, 255],
                     [163, 0, 186, 255],
                     [211, 124, 170, 255],
-                    [160, 82, 45]
+                    [160, 82, 45, 255]
                 ], [
                     [0, 0, 0, 255],
                     [76, 76, 76, 255],
@@ -141,7 +141,6 @@
             this.canvasResize();
         },
         beforeDestroy() {
-            console.log("Destroying");
             window.removeEventListener('resize', this.canvasResize);
             document.removeEventListener('keyup', this.handleKey);
             document.removeEventListener('mousemove', this.move);
@@ -152,6 +151,28 @@
             CommandStack.reset();
         },
         methods: {
+            async drawImage(url, x, y) {
+                return new Promise(resolve => {
+                    let image = new Image();
+                    image.src = url;
+                    image.onload = () => {
+                        this.drawables.push({
+                            type: 'image',
+                            position: [x, y],
+                            image,
+                        })
+                    }
+                });
+            },
+            skipColor(n) {
+                let allColours = [...this.colors[0], ...this.colors[1]];
+                let currentColorIndex = allColours.findIndex(c => this.colorEquals(c, this.activeColor));
+                let nextIndex = (currentColorIndex + n) % allColours.length;
+                if (nextIndex < 0)
+                    nextIndex += allColours.length;
+                this.activeColor = allColours[nextIndex];
+                console.log("Skip", n, this.activeColor, nextIndex);
+            },
             getStream() {
                 return this.$refs.canvas.captureStream();
             },
@@ -162,7 +183,6 @@
                 }
             },
             render() {
-                // console.log('render', this.readOnly);
                 this.context.fillStyle = 'rgb(255,255,255)';
                 this.context.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
                 this.context.lineCap = 'round';
@@ -185,6 +205,9 @@
                             break;
                         case 'fill':
                             this.context.drawImage(drawable.canvas, 0, 0);
+                            break;
+                        case 'image':
+                            this.context.drawImage(drawable.image, ...drawable.position);
                             break;
                         default:
                             console.warn("No case set");
@@ -217,14 +240,12 @@
                 } else if (tool === 'fill') {
                     let now = performance.now();
                     this.fill3(x, y, this.activeColor);
-                    console.log("fill done", performance.now() - now);
                 }
             },
             moveTool(x, y, finger, tool = this.activeTool) {
                 if (tool === 'brush' || this.activeTool === 'eraser') {
                     finger.drawable.line.push([x, y]);
                 } else if (tool === 'fill') {
-                    console.log("fill move");
                 }
             },
             endTool(x, y, finger, tool = this.activeTool) {
@@ -233,7 +254,6 @@
                     CommandStack.addCommand(new DrawableCommand(this.drawables, finger.drawable));
                     delete finger.drawable;
                 } else if (tool === 'fill') {
-                    console.log("fill end");
                 }
             },
             getNeighbours(width, height, x, y, n8 = false, dist = 1) {
@@ -277,6 +297,8 @@
                     Math.abs(colorA[3] - colorB[3]);
             },
             fill3(startX, startY, replacementColor = this.activeColor) {
+                startX = Math.floor(startX);
+                startY = Math.floor(startY);
                 //Create duplicate canvas to draw on
                 let image = this.context.getImageData(0, 0, this.canvasWidth, this.canvasHeight);
 
@@ -290,8 +312,9 @@
                 let pixelPos = (startY * this.canvasWidth + startX) * 4;
                 let targetColor = image.data.slice(pixelPos, pixelPos + 4);
 
-                if (this.colorEquals(targetColor, replacementColor))
+                if (this.colorEquals(targetColor, replacementColor)) {
                     return;
+                }
 
                 let drawable = {
                     type: 'fill',
@@ -347,7 +370,7 @@
 
                 const stack = [[startX, startY]];
 
-                while (stack.length) {
+                while (stack.length > 0) {
                     let reachedLeft;
                     let reachedRight;
                     let [x, y] = stack.pop();
@@ -365,8 +388,9 @@
                         pixelPos = (y * this.canvasWidth + x) * 4;
 
                         //If y is out of bounds or the pixel isn't the targetColor break this loop
-                        if (!(y < this.canvasHeight && isTargetColor(pixelPos)))
+                        if (!(y < this.canvasHeight && isTargetColor(pixelPos))) {
                             break;
+                        }
 
                         fillPixel(pixelPos);
 
@@ -428,7 +452,6 @@
                 let strokeWidth = 10;
                 canvas.width = brushSize + strokeWidth * 2;
                 canvas.height = brushSize + strokeWidth * 2;
-                console.log(canvas.width, canvas.height);
                 context.fillStyle = this.toRgb(...color);
                 context.lineWidth = strokeWidth;
                 context.arc(canvas.width / 2, canvas.height / 2, brushSize / 2, 0, 2 * Math.PI);
@@ -445,14 +468,14 @@
                     CommandStack.redo();
                 else if (e.code === 'KeyZ' && e.ctrlKey)
                     CommandStack.undo();
-                else if (e.code === 'KeyF')
-                    this.selectTool('fill');
-                else if (e.code === 'KeyE')
-                    this.selectTool('eraser');
-                else if (e.code === 'KeyB')
-                    this.selectTool('brush');
-                else if (e.code === 'Delete')
-                    this.clearCanvas()
+                // else if (e.code === 'KeyF')
+                //     this.selectTool('fill');
+                // else if (e.code === 'KeyE')
+                //     this.selectTool('eraser');
+                // else if (e.code === 'KeyB')
+                //     this.selectTool('brush');
+                // else if (e.code === 'Delete')
+                //     this.clearCanvas()
             },
             startMove(e, fingerIndex = 0) {
                 if (this.readOnly) return;
@@ -463,8 +486,8 @@
                 let finger = this.fingers[fingerIndex];
                 finger.down = true;
                 let {top, left} = this.$refs.canvas.getBoundingClientRect();
-                let x = e.pageX - left;
-                let y = e.pageY - top;
+                let x = e.clientX - left;
+                let y = e.clientY - top;
                 let tool = e.button === 2 ? 'eraser' : this.activeTool;
                 this.startTool(x, y, finger, tool, e.button === 2 ? this.activeBrush * 3 : this.activeBrush);
             },
@@ -473,8 +496,8 @@
 
                 if (this.fingers[fingerIndex] && this.fingers[fingerIndex].down) {
                     let {top, left} = this.$refs.canvas.getBoundingClientRect();
-                    let x = e.pageX - left;
-                    let y = e.pageY - top;
+                    let x = e.clientX - left;
+                    let y = e.clientY - top;
                     let tool = e.button === 2 ? 'eraser' : this.activeTool;
                     this.moveTool(x, y, this.fingers[fingerIndex], tool);
                 }
@@ -488,8 +511,8 @@
                 if (this.fingers[fingerIndex]) {
                     if (this.fingers[fingerIndex].down) {
                         let {top, left} = this.$refs.canvas.getBoundingClientRect();
-                        let x = e.pageX - left;
-                        let y = e.pageY - top;
+                        let x = e.clientX - left;
+                        let y = e.clientY - top;
                         let tool = e.button === 2 ? 'eraser' : this.activeTool;
                         this.endTool(x, y, this.fingers[fingerIndex], tool);
                     }
@@ -515,7 +538,6 @@
                     this.endMove(touch, touch.identifier)
             },
             canvasResize() {
-                console.log('resize');
                 let canvas = this.$refs.canvas;
                 let {width, height} = canvas.getBoundingClientRect();
                 this.canvasWidth = width;
@@ -535,6 +557,9 @@
             brushSize() {
                 this.activeBrush = this.brushSize;
             },
+            activeColor() {
+                this.$emit('colorChange', this.activeColor);
+            }
         },
         computed: {
             activeRgb() {

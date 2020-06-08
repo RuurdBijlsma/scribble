@@ -1,14 +1,24 @@
 <template>
     <div class="home">
-        <div class="join">
-            <h2>Join game</h2>
-            <v-text-field filled label="Game Code" v-model="gameCode"/>
-            <v-btn :to="`lobby?game=${gameCode}`">Join game</v-btn>
-        </div>
-        <div class="create">
-            <h2>Create new game</h2>
-            <v-btn to="lobby">Create game</v-btn>
-        </div>
+        <v-card>
+            <v-form @submit="join">
+                <v-card-title class="headline">Join game</v-card-title>
+                <v-card-subtitle>Join an existing lobby using a code.</v-card-subtitle>
+                <v-content>
+                    <v-text-field label="Game Code" v-model="gameCode"/>
+                </v-content>
+                <v-card-actions>
+                    <v-btn text type="submit">Join lobby</v-btn>
+                </v-card-actions>
+            </v-form>
+        </v-card>
+        <v-card>
+            <v-card-title class="headline">Start private match</v-card-title>
+            <v-card-subtitle>Play with friends in a private lobby.</v-card-subtitle>
+            <v-card-actions>
+                <v-btn text to="lobby">Create lobby</v-btn>
+            </v-card-actions>
+        </v-card>
     </div>
 </template>
 
@@ -22,7 +32,12 @@
         }),
         async mounted() {
         },
-        methods: {},
+        methods: {
+            join(e) {
+                e.preventDefault();
+                this.$router.push(`lobby?game=${this.gameCode}`);
+            }
+        },
     }
 </script>
 <style scoped>

@@ -5,6 +5,6 @@ export default class User {
         this.stream = stream;
         this.host = host;
         this.me = me;
-        this.avatar = '';
+        this.avatar = avatar;
     }
 }

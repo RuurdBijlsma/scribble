@@ -8,13 +8,59 @@
                     <p v-else><i>Unnamed</i></p>
                 </div>
             </div>
-            <div class="draw-content">
-                <video v-if="!me.host" ref="streamViewer" controls autoplay class="stream-viewer" width="800"
-                       height="420"/>
-                <simple-draw v-show="me.host" class="draw" ref="simpleDraw" :updateCanvas="me.host"/>
+            <div class="center-content">
+                <div class="top-info">
+                    <div class="time-left">
+                        <span>{{secondsLeft}} second{{secondsLeft !== 1 ? 's' : ''}} left</span>
+                    </div>
+                    <div class="word">
+                        <span v-if="activePlayer === me">{{guessWord}}</span>
+                        <span v-else>{{wordHint}}</span>
+                    </div>
+                    <div class="round-info">
+                        <span>Round {{currentRound}}</span>
+                    </div>
+                </div>
+                <div class="time-left-bar"
+                     v-if="settings"
+                     :style="`width:calc(${Math.ceil(timeLeft / settings.time * 1000)/10}%)`"></div>
+                <div class="draw-content">
+                    <video :srcObject.prop="activePlayer !== null ? activePlayer.stream : null"
+                           v-if="activePlayer !== me"
+                           ref="streamViewer"
+                           autoplay class="stream-viewer"
+                           width="800"
+                           height="500"/>
+
+                    <div class="choose-word" v-if="choosingWord && activePlayer === me">
+                        <p class="headline">Choose a word to draw</p>
+                        <div class="word-choices">
+                            <div v-for="word in wordChoices">
+                                <v-btn @click="startRound(word)" x-large dark text>{{word}}</v-btn>
+                            </div>
+                        </div>
+                    </div>
+                    <simple-draw v-else v-show="activePlayer === me"
+                                 class="draw"
+                                 ref="draw"
+                                 :updateCanvas="activePlayer === me"/>
+                </div>
             </div>
             <div class="chat">
-
+                <v-form @submit="sendChat" autocomplete="off">
+                    <div class="chat-content" ref="chatContent">
+                        <p v-for="message in chatMessages" :key="message.id" class="chat-message">
+                            <span :style="`color: ${stringToColor(message.user.id)}`"
+                                  class="chat-message-user">{{message.user.name}}</span>
+                            <span class="chat-message-text" v-if="message.type==='guess'">{{message.text}}</span>
+                            <span class="chat-message-correct" v-else-if="message.type==='correct'">Guessed correctly!</span>
+                        </p>
+                    </div>
+                    <v-text-field placeholder="Make guess" class="chat-field" auto filled v-model="chatText"/>
+                    <v-btn type="submit" icon class="chat-icon">
+                        <v-icon>mdi-send</v-icon>
+                    </v-btn>
+                </v-form>
             </div>
         </div>
     </div>
@@ -23,6 +69,7 @@
 <script>
     import SimpleDraw from "@/components/SimpleDraw";
     import User from "@/js/User";
+    import words from '@/assets/words.json';
 
     export default {
         name: 'Game',
@@ -33,10 +80,21 @@
             me: new User({}),
             others: [],
             everyone: [],
+            mesh: null,
             activePlayer: null,
             currentRound: 0,
+            guessWord: '',
+            wordHint: '',
+            chatText: '',
+            chatMessages: [],
+            roundTimeouts: [],
+            roundIntervals: [],
+            timeLeft: 0,
+            choosingWord: false,
+            wordChoices: [],
         }),
         async mounted() {
+            console.log('-------------{MOUNTED}--------------');
             //debug
             if (true) {
                 this.$store.commit('game', {
@@ -53,67 +111,291 @@
                 });
             }
 
+            this.mesh = this.$store.state.mesh;
             this.settings = this.$store.state.game.settings;
             this.me = this.$store.state.game.me;
             this.others = this.$store.state.game.others;
-            this.everyone = [this.me, ...this.others];
+            this.everyone = [this.me, ...this.others].sort((a, b) => a > b ? 1 : -1);
 
             let loadRemaining = this.others.length;
             if (loadRemaining === 0)
-                this.startGame();
+                this.hostStart();
 
-            this.$store.state.mesh.on('data', (id, data) => {
+            this.mesh.on('data', (id, data) => {
                 let user = this.everyone.find(user => user.id === id);
                 let [type, ...params] = JSON.parse(data);
+                console.log("Received data", type, params);
                 switch (type) {
                     case 'loaded':
                         if (!this.me.host)
                             break;
                         if (--loadRemaining <= 0) {
                             //done loading
-                            this.startGame();
+                            this.hostStart();
                         }
                         console.log('id', id, 'user', user, 'loaded', params, 'loadRemaining', loadRemaining);
                         break;
+                    case 'start':
+                        this.clientStart();
+                        break;
+                    case 'startRound':
+                        let player = this.everyone.find(user => user.id === params[0]);
+                        this.generalStartRound(player);
+                        break;
+                    case 'word':
+                        this.setGuessWord(params[0]);
+                        break;
+                    case 'wordHint':
+                        this.setWordHint(params[0]);
+                        break;
+                    case 'chat':
+                        this.submitChatText(user, params[0]);
+                        break;
                 }
+            });
+            this.mesh.on('stream', (id, stream) => {
+                console.log("Received stream", id, stream);
+                let user = this.everyone.find(user => user.id === id);
+                user.stream = stream;
             });
             if (this.me.host) {
                 console.log("me is host", this.me, this.me.host);
                 //send start signal to peers now to make sure the host is first on this page
-                this.$store.state.mesh.broadcast(['start', this.settings]);
+                this.mesh.broadcast(['start', this.settings]);
             } else {
                 //Tell host that this peer is loaded
                 let hostUser = this.others.find(user => user.host);
                 console.log("me is not host", this.me, this.me.host, 'found host:', hostUser);
-                this.$store.state.mesh.send(hostUser.id, ['loaded']);
+                this.mesh.send(hostUser.id, ['loaded']);
             }
+            // let wordHint;
+            // let chosenWord = 'ladder';
+            // for (let i = 0; i < 10; i++) {
+            //     wordHint = this.getWordHint(chosenWord, 1 / 4, wordHint);
+            // }
         },
         methods: {
-            startGame() {
+            hostStart() {
+                console.log("[HOST START]");
                 //All users are loaded in at this point
-                console.log("start game");
-                this.activePlayer = this.me;
-                //give everyone eveyone else's stream :) for the entire game
-                this.startRound();
+                this.generalStart();
+                this.generalStartRound(this.everyone[0]);
+
+                this.mesh.broadcast(['start']);
+                this.mesh.broadcast(['startRound', this.activePlayer.id]);
             },
-            async startRound() {
-                this.currentRound++;
-                let chosenWord = await this.showWord();
-                this.mesh.broadcast(['word', chosenWord]);
+            clientStart() {
+                console.log("[clientStart]");
+                this.generalStart();
+            },
+            generalStart() {
+                console.log("[generalStart]");
                 this.mesh.broadcastStream(this.$refs.draw.getStream());
             },
-            async showWord() {
-                return new Promise(resolve => {
-                    resolve('ladder');
-                });
+            async generalStartRound(player) {
+                console.log("[generalStartRound]");
+                this.currentRound++;
+                this.activePlayer = player;
+                this.timeLeft = this.settings.time;
+                let roundStartTime = performance.now();
+                let interval;
+                interval = setInterval(() => {
+                    let timePassed = performance.now() - roundStartTime;
+                    this.timeLeft = this.settings.time - timePassed / 1000;
+                    if (this.timeLeft < 0) {
+                        this.timeLeft = 0;
+                        clearInterval(interval);
+                    }
+                }, 50);
+                this.roundIntervals.push(interval);
+                if (this.activePlayer === this.me) {
+                    this.chooseWord();
+                }
+            },
+            //Only call this on the person that is drawing this round
+            async startRound(chosenWord) {
+                this.choosingWord = false;
+                console.log("[startRound]");
+                this.mesh.broadcast(['word', chosenWord]);
+
+                this.setGuessWord(chosenWord);
+
+                let wordHint = this.getWordHint(chosenWord, 1 / 10);
+                this.mesh.broadcast(['wordHint', wordHint]);
+                //After 1/4 of the total time give the first hint
+                this.roundTimeouts.push(setTimeout(() => {
+                    wordHint = this.getWordHint(chosenWord, 1 / 5, wordHint);
+                    this.setWordHint(wordHint);
+                    this.mesh.broadcast(['wordHint', wordHint]);
+                }, this.settings.time * 1000 * (1 / 5)));
+                //After 2/4 of the total time give the second hint
+                this.roundTimeouts.push(setTimeout(() => {
+                    wordHint = this.getWordHint(chosenWord, 1 / 5, wordHint);
+                    this.setWordHint(wordHint);
+                    this.mesh.broadcast(['wordHint', wordHint]);
+                }, this.settings.time * 1000 * (2 / 5)));
+                //After 3/4 of the total time give the third hint
+                this.roundTimeouts.push(setTimeout(() => {
+                    wordHint = this.getWordHint(chosenWord, 1 / 5, wordHint);
+                    this.setWordHint(wordHint);
+                    this.mesh.broadcast(['wordHint', wordHint]);
+                }, this.settings.time * 1000 * (3 / 5)));
+                //After 3/4 of the total time give the third hint
+                this.roundTimeouts.push(setTimeout(() => {
+                    wordHint = this.getWordHint(chosenWord, 1 / 5, wordHint);
+                    this.setWordHint(wordHint);
+                    this.mesh.broadcast(['wordHint', wordHint]);
+                }, this.settings.time * 1000 * (4 / 5)));
+            },
+            getRandom(arr, n) {
+                const result = new Array(n);
+                let len = arr.length;
+                const taken = new Array(len);
+                if (n > len)
+                    throw new RangeError("getRandom: more elements taken than available");
+                while (n--) {
+                    const x = Math.floor(Math.random() * len);
+                    result[n] = arr[x in taken ? taken[x] : x];
+                    taken[x] = --len in taken ? taken[len] : len;
+                }
+                return result;
+            },
+            chooseWord() {
+                this.choosingWord = true;
+                this.wordChoices = this.getRandom(words, 4);
+            },
+            getWordHint(word, revealPercentage, hiddenWord = '_'.repeat(word.length)) {
+                revealPercentage = Math.max(0, Math.min(1, revealPercentage));
+
+                if (word.length !== hiddenWord.length)
+                    return console.warn("word.length does not match hiddenWord.length", {word, hiddenWord});
+
+                const hiddenChar = '_';
+                let letterBag = word.split('').map((letter, index) => ({letter, index}));
+                let removeLetters = hiddenWord.split('').map((letter, index) => ({
+                    letter,
+                    index
+                })).filter(l => l.letter !== hiddenChar);
+                for (let letter of removeLetters)
+                    letterBag.splice(letterBag.findIndex(l => l.index === letter.index), 1);
+
+                const amountOfLettersToReveal = Math.round(letterBag.length * revealPercentage);
+                let revealedLetters = [];
+                for (let i = 0; i < amountOfLettersToReveal; i++) {
+                    let letter = letterBag[Math.floor(Math.random() * letterBag.length)];
+                    revealedLetters.push(letter);
+                }
+                let wordHint = hiddenWord.split('');
+                for (let {letter, index} of revealedLetters)
+                    wordHint[index] = letter;
+
+                return wordHint.join('');
+            },
+            setGuessWord(word) {
+                this.guessWord = word;
+            },
+            setWordHint(wordHint) {
+                this.wordHint = wordHint;
+            },
+            sendChat(e) {
+                e.preventDefault();
+                this.mesh.broadcast(['chat', this.chatText]);
+                this.submitChatText(this.me, this.chatText);
+                this.chatText = '';
+            },
+            submitChatText(user, text) {
+                if (text === this.guessWord) {
+                    this.chatMessages.push({
+                        id: Math.floor(Math.random() * 1000000),
+                        type: 'correct',
+                        user,
+                    });
+                }else{
+                    this.chatMessages.push({
+                        id: Math.floor(Math.random() * 1000000),
+                        type: 'guess',
+                        text,
+                        user,
+                    });
+                }
+
+                const chat = this.$refs.chatContent;
+                setTimeout(() => {
+                    chat.scrollTo({
+                        top: chat.scrollHeight,
+                        left: 0,
+                        behavior: "smooth",
+                    });
+                }, 50);
+            },
+            stringToColor(str) {
+                const hashCode = str => {
+                    let hash = 0;
+                    for (let i = 0; i < str.length; i++) {
+                        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                    }
+                    return hash;
+                };
+                const intToRGB = i => {
+                    const c = (i & 0x00FFFFFF)
+                        .toString(16)
+                        .toUpperCase();
+
+                    return "00000".substring(0, 6 - c.length) + c;
+                };
+                return '#' + intToRGB(hashCode(str));
             }
         },
+        computed: {
+            secondsLeft() {
+                return Math.round(this.timeLeft);
+            },
+        },
+        onBeforeDestroy() {
+            for (let timeout of this.roundTimeouts)
+                clearTimeout(timeout);
+            for (let interval of this.roundIntervals)
+                clearInterval(interval);
+        }
     }
 </script>
 <style scoped>
-    .game-content {
-        min-width: 1210px;
-        margin: 10px;
+    .time-left-bar {
+        height: 8px;
+        background-color: lime;
+        border-top-right-radius: 8px;
+        border-top-left-radius: 8px;
+        margin-left: 10px;
+    }
+
+    .top-info {
+        display: flex;
+        justify-content: space-evenly;
+        font-family: 'Fredoka One', cursive !important;
+        padding: 15px 15px 5px;
+        margin-top: 25px;
+        font-size: 20px;
+        color: white;
+    }
+
+    .top-info > div {
+        width: 33%;
+        text-align: center;
+    }
+
+    .word {
+        font-size: 30px;
+    }
+
+    .time-left, .round-info {
+        padding-top: 10px;
+    }
+
+    .game-content[data-v-3614b62c] {
+        /*min-width: 1237px;*/
+        margin: auto 10px;
+        display: flex;
+        justify-content: center;
     }
 
     .game-content > div {
@@ -127,7 +409,8 @@
         text-align: center;
         border-top-left-radius: 10px;
         border-bottom-left-radius: 10px;
-        margin-top: 20px;
+        margin-top: 110px;
+        max-height: 460px;
     }
 
     .users img {
@@ -136,14 +419,37 @@
         height: 70px;
     }
 
-    .draw-content {
-        margin: 0 auto;
+    .center-content {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .choose-word {
         width: 800px;
+        height: 580px;
+        background-color: rgba(0, 0, 0, 0.8);
+        border-radius: 10px;
+        box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.3);
+        padding: 50px;
+        font-size: 40px;
+        font-family: 'Fredoka One', cursive !important;
+        color: white;
+        text-align: center;
+    }
+
+    .choose-word p {
+        font-family: 'Fredoka One', cursive !important;
+        color: white;
+    }
+
+    .word-choices {
+        display: flex;
+        justify-content: space-evenly;
     }
 
     .draw {
         width: 800px;
-        height: 500px;
+        height: 580px;
         background-color: rgba(255, 255, 255, 0.25);
         border-radius: 10px;
         overflow: hidden;
@@ -152,7 +458,7 @@
 
     .stream-viewer {
         width: 800px;
-        height: 420px;
+        height: 500px;
         background-color: rgba(255, 255, 255, 0.25);
         border-radius: 10px;
         overflow: hidden;
@@ -165,7 +471,53 @@
         width: 300px;
         border-top-right-radius: 10px;
         border-bottom-right-radius: 10px;
-        margin: 20px 0;
+        margin-top: 110px;
         vertical-align: top;
+        overflow: hidden;
+    }
+
+    .chat-content {
+        height: calc(100% - 57px);
+        width: 100%;
+        padding: 10px;
+        overflow-y: auto;
+    }
+
+    .chat-field {
+        width: 100%;
+        margin-right: -45px;
+        display: inline-block;
+    }
+
+    .chat-icon {
+        display: inline-block;
+    }
+
+    .chat-message {
+        margin: 5px 0;
+    }
+
+    .chat-message-user {
+        font-weight: bold;
+        margin-right: 6px;
+        background-color: white;
+        border-radius: 4px;
+        padding: 3px 7px;
+    }
+
+    .chat-message-text {
+
+    }
+
+    .chat-message-correct {
+        font-style: italic;
+        color:lime;
+        background-color: white;
+        border-radius: 4px;
+        padding: 3px 7px;
+    }
+
+    form.v-form {
+        height: 100%;
     }
 </style>

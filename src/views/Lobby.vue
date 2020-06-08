@@ -1,13 +1,18 @@
 <template>
     <div class="home">
-        <h1>Game lobby - {{$route.query.game}}</h1>
-        <p>Share the link with others to invite them</p>
-        <div class="settings">
-            <lobby-settings :read-only="!me.host" ref="settings" @change="updateSettings" :updateSettings="settings"/>
-            <create-user :read-only="!me.host" ref="createUser" @userChange="updateUserName"/>
-            <lobby-users class="lobby-users" ref="lobbyUsers" :users="users" :me="me" @kick="kick"/>
-        </div>
-        <v-btn color="primary" v-if="me.host" @click="createLobby">Create lobby</v-btn>
+        <v-card>
+            <v-card-title class="headline">Game lobby - {{$route.query.game}}</v-card-title>
+            <v-card-subtitle>Share the link with others to invite them.</v-card-subtitle>
+            <div class="settings">
+                <lobby-settings :read-only="!me.host" ref="settings" @change="updateSettings"
+                                :updateSettings="settings"/>
+                <create-user :read-only="!me.host" ref="createUser" @userChange="updateUserName"/>
+                <lobby-users class="lobby-users" ref="lobbyUsers" :users="users" :me="me" @kick="kick"/>
+            </div>
+            <v-card-actions>
+                <v-btn color="primary" v-if="me.host" @click="createLobby">Create lobby</v-btn>
+            </v-card-actions>
+        </v-card>
     </div>
 </template>
 
@@ -140,8 +145,8 @@
                 if (this.me.host)
                     this.mesh.broadcast(['settings', settings]);
             },
-            updateUserName(user) {
-                this.me.name = user;
+            updateUserName(userName) {
+                this.me.name = userName;
                 this.mesh.broadcast(['user', this.me]);
             },
             createLobby() {
@@ -175,10 +180,9 @@
 <style scoped>
     .home {
         width: 100%;
-        max-width: 1500px;
+        max-width: 1300px;
         margin: 0 auto;
         padding: 30px;
-        text-align: center;
     }
 
     .settings {
@@ -188,7 +192,7 @@
 
     .create-user {
         padding: 20px;
-        width: 300px;
+        width: 352px;
     }
 
     .lobby-settings {
