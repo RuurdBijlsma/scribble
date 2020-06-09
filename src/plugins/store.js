@@ -8,15 +8,11 @@ export default new Vuex.Store({
     state: {
         game: {},
         mesh: new SimplePeerMesh('scribble'),
-        socket: null,
     },
     mutations: {
         game(state, game) {
             console.log("game", game);
             state.game = game;
-        },
-        socket(state, socket) {
-            state.socket = socket;
         },
     },
     actions: {},

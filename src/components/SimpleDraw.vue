@@ -18,7 +18,9 @@
         </div>
         <div class="controls" v-if="showControls">
             <div class="colors">
-                <div class="selected-color" :style="`background-color: ${activeRgb}`"></div>
+                <v-color-picker v-show="showColorPicker" class="color-picker" v-model="pickedColor"/>
+                <div class="selected-color" :style="`background-color: ${activeRgb}`"
+                     @click="toggleColorPicker"></div>
                 <div class="color-grid">
                     <div v-for="(row, i) in colors" class="color-row" :key="i">
                         <div v-for="[r,g,b,a] in row"
@@ -82,6 +84,7 @@
             activeTool: 'brush',
             activeColor: [0, 0, 0, 255],
             activeBrush: 13,
+            showColorPicker: false,
             colors: [
                 [
                     [255, 255, 255, 255],
@@ -119,6 +122,7 @@
             commands: [],
             commandIndex: 0,
             shouldPreventContext: false,
+            pickedColor: {r: 0, g: 0, b: 0, a: 1},
         }),
         mounted() {
             console.log(CommandStack);
@@ -134,6 +138,7 @@
             document.addEventListener('touchmove', this.moveTouch, false);
             document.addEventListener('mouseup', this.endMove, false);
             document.addEventListener('touchend', this.endTouch, false);
+            document.addEventListener('wheel', this.handleWheel, false);
 
             document.addEventListener('contextmenu', this.preventContext, false);
 
@@ -147,10 +152,27 @@
             document.removeEventListener('touchmove', this.moveTouch);
             document.removeEventListener('mouseup', this.endMove);
             document.removeEventListener('touchend', this.endTouch);
+            document.removeEventListener('wheel', this.handleWheel);
             cancelAnimationFrame(this.animationId);
             CommandStack.reset();
         },
         methods: {
+            handleWheel(e) {
+                if (e.altKey) {
+                    let newSize = this.activeBrush - e.deltaY / 50;
+                    newSize = Math.max(Math.min(107, newSize), 1);
+                    this.selectBrush(newSize);
+                }
+            },
+            pickColorToColor({r, g, b, a}) {
+                return [r, g, b, Math.floor(a * 255)];
+            },
+            colorToPickColor([r, g, b, a]) {
+                return {r, g, b, a: a / 255};
+            },
+            toggleColorPicker() {
+                this.showColorPicker = !this.showColorPicker;
+            },
             async drawImage(url, x, y) {
                 return new Promise(resolve => {
                     let image = new Image();
@@ -217,6 +239,7 @@
                 this.animationId = requestAnimationFrame(this.render);
             },
             startTool(x, y, finger, tool = this.activeTool, brushSize = this.activeBrush) {
+                this.showColorPicker = false;
                 if (tool === 'brush') {
                     let line = [[x, y]];
                     let drawable = {
@@ -424,18 +447,25 @@
                 fillContext.putImageData(fillImage, 0, 0);
             },
             clearCanvas() {
+                this.showColorPicker = false;
                 CommandStack.executeCommand(new ClearCommand(this.drawables));
             },
-            selectColor(r, g, b, a = 255) {
+            selectColor(r, g, b, a = 255, updatePick = true) {
                 this.activeColor = [r, g, b, a];
+                if (updatePick) {
+                    this.pickedColor = this.colorToPickColor(this.activeColor);
+                    this.showColorPicker = false;
+                }
                 this.updateCursor(this.activeBrush, this.activeColor, this.activeTool);
             },
             selectTool(tool) {
                 this.activeTool = tool;
+                this.showColorPicker = false;
                 this.updateCursor(this.activeBrush, this.activeColor, this.activeTool);
             },
             selectBrush(brushSize) {
                 this.activeBrush = brushSize;
+                this.showColorPicker = false;
                 this.updateCursor(this.activeBrush, this.activeColor, this.activeTool);
             },
             updateCursor(brushSize, color, tool) {
@@ -461,6 +491,13 @@
                 let url = canvas.toDataURL('image/png');
                 this.$refs.canvas.style.cursor = `url(${url}) ${Math.floor(canvas.width / 2)} ${Math.floor(canvas.height / 2)}, auto`;
             },
+            pickColor(x, y) {
+                x = Math.floor(x);
+                y = Math.floor(y);
+                //Create duplicate canvas to draw on
+                let image = this.context.getImageData(x, y, 1, 1);
+                return image.data;
+            },
             handleKey(e) {
                 if (this.readOnly || !this.showControls) return;
 
@@ -479,6 +516,9 @@
             },
             startMove(e, fingerIndex = 0) {
                 if (this.readOnly) return;
+                if (e.altKey) {
+                    return;
+                }
                 this.shouldPreventContext = true;
 
                 if (!this.fingers[fingerIndex])
@@ -493,6 +533,9 @@
             },
             move(e, fingerIndex = 0) {
                 if (this.readOnly) return;
+                if (e.altKey) {
+                    return;
+                }
 
                 if (this.fingers[fingerIndex] && this.fingers[fingerIndex].down) {
                     let {top, left} = this.$refs.canvas.getBoundingClientRect();
@@ -507,6 +550,13 @@
                 setTimeout(() => {
                     this.shouldPreventContext = false;
                 }, 50);
+                if (e.altKey) {
+                    let {top, left} = this.$refs.canvas.getBoundingClientRect();
+                    let x = e.clientX - left;
+                    let y = e.clientY - top;
+                    this.selectColor(...this.pickColor(x, y));
+                    return;
+                }
 
                 if (this.fingers[fingerIndex]) {
                     if (this.fingers[fingerIndex].down) {
@@ -544,7 +594,7 @@
                 this.canvasHeight = height;
             },
             toRgb(r, g, b, a) {
-                return `rgba(${r},${g},${b},${a})`
+                return `rgba(${r},${g},${b},${a / 255})`
             }
         },
         watch: {
@@ -559,7 +609,10 @@
             },
             activeColor() {
                 this.$emit('colorChange', this.activeColor);
-            }
+            },
+            pickedColor() {
+                this.selectColor(...this.pickColorToColor(this.pickedColor), false);
+            },
         },
         computed: {
             activeRgb() {
@@ -601,6 +654,13 @@
         width: 50px;
         border-radius: 11px;
         margin: 5px 0;
+        cursor: pointer;
+    }
+
+    .color-picker {
+        position: absolute;
+        margin-bottom: 40px;
+        margin-left: 40px;
     }
 
     .color-grid {

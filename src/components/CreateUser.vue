@@ -43,6 +43,7 @@
             saveInterval: -1,
         }),
         mounted() {
+            console.warn("MOUNTED");
             if (localStorage.getItem('lastAvatar') !== null) {
                 this.$refs.draw.drawImage(localStorage.lastAvatar, 0, 0);
             }
@@ -70,7 +71,8 @@
                 this.$emit('userChange', this.userName);
             }
         },
-        onBeforeDestroy() {
+        beforeDestroy() {
+            console.warn("Clearing interval");
             clearInterval(this.saveInterval);
         }
     }

@@ -34,6 +34,10 @@
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap');
 
+    * {
+        /*font-family: 'Fredoka One', cursive;*/
+    }
+
     html, body {
         /*overflow-y: auto;*/
         -webkit-touch-callout: none; /* iOS Safari */

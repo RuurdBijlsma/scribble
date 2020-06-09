@@ -93,11 +93,12 @@
             timeLeft: 0,
             choosingWord: false,
             wordChoices: [],
+            chooseTimeout: -1,
         }),
         async mounted() {
             console.log('-------------{MOUNTED}--------------');
             //debug
-            if (false) {
+            if (true) {
                 this.$store.commit('game', {
                     host: true,
                     me: new User({
@@ -154,6 +155,12 @@
                         this.submitChatText(user, params[0]);
                         break;
                 }
+            });
+            this.mesh.on('disconnect', id => {
+                let user = this.everyone.findIndex(u => u.id === id);
+                this.everyone.splice(this.everyone.indexOf(user), 1);
+                this.others.splice(this.others.indexOf(user), 1);
+                this.chooseNewHost();
             });
             this.mesh.on('stream', (id, stream) => {
                 console.log("Received stream", id, stream);
@@ -212,6 +219,7 @@
                     this.timeLeft = this.settings.time - timePassed / 1000;
                     if (this.timeLeft < 0) {
                         this.timeLeft = 0;
+                        this.endRound();
                         clearInterval(interval);
                     }
                 }, 50);
@@ -219,6 +227,7 @@
             },
             //Only call this on the person that is drawing this round
             async startRound(chosenWord) {
+                clearTimeout(this.chooseTimeout);
                 this.generalStartRoundAfterWordChoice();
                 this.choosingWord = false;
                 console.log("[startRound]");
@@ -253,6 +262,14 @@
                     this.mesh.broadcast(['wordHint', wordHint]);
                 }, this.settings.time * 1000 * (4 / 5)));
             },
+            endRound() {
+                for (let timeout of this.roundTimeouts)
+                    clearTimeout(timeout);
+                for (let interval of this.roundIntervals)
+                    clearInterval(interval);
+
+                alert("End round");
+            },
             getRandom(arr, n) {
                 const result = new Array(n);
                 let len = arr.length;
@@ -269,6 +286,10 @@
             chooseWord() {
                 this.choosingWord = true;
                 this.wordChoices = this.getRandom(words, 4);
+                this.chooseTimeout = setTimeout(() => {
+                    let choice = this.wordChoices[Math.floor(Math.random() * this.wordChoices.length)];
+                    this.startRound(choice);
+                }, 15000);
             },
             getWordHint(word, revealPercentage, hiddenWord = '_'.repeat(word.length)) {
                 revealPercentage = Math.max(0, Math.min(1, revealPercentage));
@@ -316,6 +337,12 @@
                         type: 'correct',
                         user,
                     });
+                    //todo record time of completion for the user
+                    user.done = true;
+                    // if no one is not done:
+                    if (!this.everyone.some(u => !u.done)) {
+                        this.endRound();
+                    }
                 } else {
                     this.chatMessages.push({
                         id: Math.floor(Math.random() * 1000000),
@@ -350,14 +377,23 @@
                     return "00000".substring(0, 6 - c.length) + c;
                 };
                 return '#' + intToRGB(hashCode(str));
-            }
+            },
+            chooseNewHost() {
+                if (this.everyone.findIndex(user => user.host) === -1 && this.mesh.isFullyConnected()) {
+                    console.log(this.everyone, JSON.stringify(this.everyone));
+                    let newHost = this.everyone.sort((a, b) => a.id > b.id ? 1 : -1)[0];
+                    newHost.host = true;
+                    console.log("Host disconnected, migrating host", newHost);
+                }
+            },
         },
         computed: {
             secondsLeft() {
                 return Math.round(this.timeLeft);
             },
         },
-        onBeforeDestroy() {
+        beforeDestroy() {
+            clearTimeout(this.chooseTimeout);
             for (let timeout of this.roundTimeouts)
                 clearTimeout(timeout);
             for (let interval of this.roundIntervals)

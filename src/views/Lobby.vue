@@ -1,5 +1,5 @@
 <template>
-    <div class="home">
+    <div class="lobby">
         <v-card>
             <v-card-title class="headline">Game lobby - {{$route.query.game}}</v-card-title>
             <v-card-subtitle>Share the link with others to invite them.</v-card-subtitle>
@@ -24,7 +24,7 @@
     import User from "@/js/User";
 
     export default {
-        name: 'Home',
+        name: 'Lobby',
         components: {LobbyUsers, LobbySettings, CreateUser, SimpleDraw},
         data: () => ({
             users: [],
@@ -37,7 +37,6 @@
             this.mesh = this.$store.state.mesh;
             console.log("MESH", this.mesh);
             let socket = await this.mesh.connect('https://api.ruurd.dev');
-            this.$store.commit('socket', socket);
             console.log(socket);
 
             this.me.id = socket.id;
@@ -162,6 +161,7 @@
                 this.mesh.broadcastRemoveStream(this.me.stream);
                 //Remove all listeners used on this page
                 this.mesh.removeAllListeners();
+                console.warn("Calling destroy");
                 this.$router.push('/game');
                 // console.log(gameId);
             }
@@ -171,14 +171,15 @@
                 console.log("ME CHANGED from old to new", old, val);
             }
         },
-        onBeforeDestroy() {
+        beforeDestroy() {
             this.mesh.destroy();
+            console.warn('DESTROY LOBBY');
             clearInterval(this.hostInterval);
         },
     }
 </script>
 <style scoped>
-    .home {
+    .lobby {
         width: 100%;
         max-width: 1300px;
         margin: 0 auto;
