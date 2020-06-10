@@ -9,17 +9,26 @@
 
 <script>
     //todo:
-    // * Create end of round screen with points added per person and the correct word
-    // * When everyone guessed correctly, show end of round screen
-    // * When time runs out show end of round screen
-    // * Improve information shown in users thing in game page
     // * Add sounds
-    // * Add next round after end round screen
-    // * Add game overview when all rounds are complete
+    // * Testing
+    // * Remove bugs
     //Far away todo:
     // * Room browser (allow public lobbies)
     // * No more bugs :)
     // * Get words from chat guesses?
+    // * let player join mid game
+    // * adjust rounds in user object when this happens
+
+    // * Add next round after end round screen [DONE]
+    // * Add game overview when all rounds are complete [DONE]
+    // * Create end of round screen with points added per person and the correct word [DONE]
+    // * When everyone guessed correctly, show end of round screen [DONE]
+    // * When time runs out show end of round screen [DONE]
+    // * Improve information shown in users thing in game page [DONE]
+    //Who is drawing now [DONE]
+    //clear word after round [DONE]
+    //end of game screen [DONE]
+    //visible round niet baseren op player count want die kan veranderen [DONE]
 
     export default {
         name: 'App',

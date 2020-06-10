@@ -192,7 +192,7 @@
                 let nextIndex = (currentColorIndex + n) % allColours.length;
                 if (nextIndex < 0)
                     nextIndex += allColours.length;
-                this.activeColor = allColours[nextIndex];
+                this.selectColor(...allColours[nextIndex]);
                 console.log("Skip", n, this.activeColor, nextIndex);
             },
             getStream() {

@@ -2,10 +2,24 @@
     <div class="game">
         <div class="game-content">
             <div class="users">
-                <div v-for="user in everyone">
+                <div class="user-headline">Drawing</div>
+                <div class="now-drawing single-user" v-if="activePlayer">
+                    <img :src="activePlayer.avatar" alt="User avatar">
+                    <div v-if="activePlayer.name">
+                        <p :style="`color: ${stringToColor(activePlayer.id)}`" class="chat-message-user">
+                            {{activePlayer.name}}</p>
+                        <p>{{Math.round(activePlayer.rounds.map(r=>r.points).reduce((a,b)=>a+b, 0))}} pts</p>
+                    </div>
+                    <p v-else><i>Unnamed</i></p>
+                </div>
+                <div class="user-headline">Guessing</div>
+                <div v-for="user in everyone.filter(u=>u!==activePlayer)" class="single-user">
                     <img :src="user.avatar" alt="User avatar">
-                    <p v-if="user.name">{{user.name}}: {{Math.round(user.rounds.map(r=>r.points).reduce((a,b)=>a+b,
-                        0))}}</p>
+                    <div v-if="user.name">
+                        <p :style="`color: ${stringToColor(user.id)}`" class="chat-message-user">
+                            {{user.name}}</p>
+                        <p>{{Math.round(user.rounds.map(r=>r.points).reduce((a,b)=>a+b, 0))}} pts</p>
+                    </div>
                     <p v-else><i>Unnamed</i></p>
                 </div>
             </div>
@@ -19,7 +33,7 @@
                         <span v-else>{{wordHint}}</span>
                     </div>
                     <div class="round-info">
-                        <span v-if="settings && settings.rounds">Round {{Math.ceil(currentRound / everyone.length)}} / {{settings.rounds}}</span>
+                        <span v-if="settings && settings.rounds">Round {{visibleRound}} / {{settings.rounds}}</span>
                     </div>
                 </div>
                 <div class="time-left-bar"
@@ -27,27 +41,41 @@
                      :style="`width:calc(${Math.ceil(timeLeft / settings.time * 1000)/10}% - 20px)`"></div>
                 <div class="draw-content">
                     <div class="other-choosing" v-if="otherChoosing">
-                        A player is choosing a word to draw
+                        {{activePlayer.name}} is choosing a word to draw
                     </div>
 
                     <div class="round-end" v-if="showEndRound">
                         <p class="round-info-reveal">The word was</p>
                         <p class="round-info-guess-word">{{guessWord}}</p>
                         <p class="round-info-reveal">Scores</p>
-                        <div v-for="user in everyoneSorted"
-                             class="round-info-user" :key="user.id">
+                        <div v-for="user in everyoneSortedByNew" class="round-info-user" :key="user.id">
                             <img :src="user.avatar" class="round-info-avatar" alt="User avatar">
                             <span class="round-info-name">{{user.name}}:</span>
+                            <span class="spacer"/>
                             <span class="round-info-total">
                             {{Math.round(user.rounds.slice(0, currentRound - 1).map(r=>r.points).reduce((a,b)=>a+b, 0))}}
                             </span>
                             <span class="round-info-plus">+</span>
                             <span class="round-info-new">{{Math.round(user.rounds[currentRound-1].points)}}</span>
+                            <span class="round-info-total">pts</span>
+                        </div>
+                    </div>
+
+                    <div class="round-end" v-else-if="showEndGame">
+                        <div v-for="(user, i) in everyoneSorted" class="round-info-user" :key="user.id"
+                             :style="`font-size: ${40 / (i+1) ** 0.1}px`">
+                            <span class="round-info-rank">#{{i + 1}}</span>
+                            <img :src="user.avatar" class="round-info-avatar" alt="User avatar">
+                            <span class="round-info-name">{{user.name}}:</span>
+                            <span class="spacer"/>
+                            <span class="round-info-total2">
+                            {{Math.round(user.rounds.map(r=>r.points).reduce((a,b)=>a+b, 0))}} pts
+                            </span>
                         </div>
                     </div>
 
                     <video :srcObject.prop="activePlayer !== null ? activePlayer.stream : null"
-                           v-else-if="activePlayer !== me && !otherChoosing"
+                           v-if="activePlayer !== me && !choosingWord && !otherChoosing"
                            ref="streamViewer"
                            autoplay class="stream-viewer"
                            width="800"
@@ -62,22 +90,31 @@
                         </div>
                     </div>
 
-                    <simple-draw v-show="activePlayer === me && !choosingWord && !showEndRound && !otherChoosing"
-                                 class="draw"
-                                 ref="draw"
-                                 :updateCanvas="activePlayer === me && !choosingWord && !showEndRound && !otherChoosing"/>
+                    <simple-draw
+                            v-show="activePlayer === me && !choosingWord && !otherChoosing"
+                            class="draw"
+                            ref="draw"
+                            :updateCanvas="activePlayer === me && !choosingWord && !otherChoosing"/>
                 </div>
             </div>
             <div class="chat">
                 <v-form @submit="sendChat" autocomplete="off">
                     <div class="chat-content" ref="chatContent">
-                        <p v-for="message in chatMessages" :key="message.id" class="chat-message">
-                            <span :style="`color: ${stringToColor(message.user.id)}`"
-                                  class="chat-message-user">{{message.user.name}}</span>
-                            <span class="chat-message-text" v-if="message.type==='guess'">{{message.text}}</span>
-                            <span class="chat-message-correct"
-                                  v-else-if="message.type==='correct'">Guessed correctly!</span>
-                        </p>
+                        <div v-for="message in chatMessages" :key="message.id" class="chat-message">
+                            <div v-if="message.type==='drawerChange'">
+                                <span class="chat-message-correct">Now drawing</span>
+                                <span class="chat-message-spacer"/>
+                                <span :style="`color: ${stringToColor(message.user.id)}`" class="chat-message-user">{{message.user.name}}</span>
+                            </div>
+                            <div v-else-if="message.type==='guess'">
+                                <span :style="`color: ${stringToColor(message.user.id)}`" class="chat-message-user">{{message.user.name}}</span>
+                                <span class="chat-message-text">{{message.text}}</span>
+                            </div>
+                            <div v-else-if="message.type==='correct'">
+                                <span :style="`color: ${stringToColor(message.user.id)}`" class="chat-message-user">{{message.user.name}}</span>
+                                <span class="chat-message-correct">Guessed correctly!</span>
+                            </div>
+                        </div>
                     </div>
                     <v-text-field placeholder="Make guess" class="chat-field" auto filled v-model="chatText"/>
                     <v-btn type="submit" icon class="chat-icon">
@@ -117,13 +154,15 @@
             wordChoices: [],
             chooseTimeout: -1,
             showEndRound: false,
+            showEndGame: false,
             roundStartTime: 0,
             otherChoosing: false,
+            visibleRound: 1,
         }),
         async mounted() {
             console.log('-------------{MOUNTED}--------------');
             //debug
-            if (true) {
+            if (false) {
                 this.$store.commit('game', {
                     host: true,
                     me: new User({
@@ -134,7 +173,7 @@
                         me: true,
                     }),
                     others: [],
-                    settings: {rounds: 5, time: 10, language: 'English'},
+                    settings: {rounds: 5, time: 60, language: 'English'},
                 });
             }
 
@@ -228,7 +267,7 @@
                 console.log("[HOST START]");
                 //All users are loaded in at this point
                 this.generalStart();
-                this.generalStartRound(this.everyone[0]);
+                this.generalStartRound(this.everyoneSortedById[0]);
 
                 this.mesh.broadcast(['start']);
                 this.mesh.broadcast(['startRound', this.activePlayer.id]);
@@ -246,6 +285,13 @@
                 console.log("[generalStartRound]");
                 this.currentRound++;
                 this.activePlayer = player;
+
+                this.chatMessages.push({
+                    id: Math.floor(Math.random() * 1000000),
+                    type: 'drawerChange',
+                    user: player,
+                });
+
                 this.timeLeft = this.settings.time;
 
                 if (this.activePlayer === this.me) {
@@ -312,15 +358,29 @@
                     clearTimeout(timeout);
                 for (let interval of this.roundIntervals)
                     clearInterval(interval);
+
+                let currentPlayerIndex = this.everyoneSortedById.indexOf(this.activePlayer);
+                let nextPlayerIndex = (currentPlayerIndex + 1) % this.everyone.length;
+                if (nextPlayerIndex === 0)
+                    this.visibleRound++;
+                if (nextPlayerIndex < 0)
+                    nextPlayerIndex += this.everyone.length;
+
                 this.showEndRound = true;
+
                 if (this.me.host) {
                     this.roundTimeouts.push(setTimeout(() => {
-                        let currentPlayerIndex = this.everyone.indexOf(this.activePlayer);
-                        let nextPlayerIndex = (currentPlayerIndex + 1) % this.everyone.length;
-                        if (nextPlayerIndex < 0)
-                            nextPlayerIndex += this.everyone.length;
-                        this.generalStartRound(this.everyone[nextPlayerIndex]);
-                        this.mesh.broadcast(['startRound', this.activePlayer.id]);
+                        this.chatMessages = [];
+                        this.guessWord = '';
+                        this.wordHint = '';
+
+                        if (this.visibleRound > this.settings.rounds) {
+                            this.showEndRound = false;
+                            this.showEndGame = true;
+                        } else {
+                            this.generalStartRound(this.everyoneSortedById[nextPlayerIndex]);
+                            this.mesh.broadcast(['startRound', this.activePlayer.id]);
+                        }
                     }, 1000 * 10));
                 }
             },
@@ -461,7 +521,7 @@
             chooseNewHost() {
                 if (this.everyone.findIndex(user => user.host) === -1 && this.mesh.isFullyConnected()) {
                     console.log(this.everyone, JSON.stringify(this.everyone));
-                    let newHost = this.everyone.sort((a, b) => a.id > b.id ? 1 : -1)[0];
+                    let newHost = this.everyoneSortedById[0];
                     newHost.host = true;
                     console.log("Host disconnected, migrating host", newHost);
                 }
@@ -471,9 +531,15 @@
             secondsLeft() {
                 return Math.round(this.timeLeft);
             },
-            everyoneSorted() {
+            everyoneSortedById() {
+                return this.everyone.sort((a, b) => a.id > b.id ? 1 : -1);
+            },
+            everyoneSortedByNew() {
                 return this.everyone.sort((a, b) => b.rounds[this.currentRound - 1].points - a.rounds[this.currentRound - 1].points);
-            }
+            },
+            everyoneSorted() {
+                return this.everyone.sort((a, b) => b.rounds.map(r => r.points).reduce((c, d) => c + d, 0) - a.rounds.map(r => r.points).reduce((c, d) => c + d, 0))
+            },
         },
         beforeDestroy() {
             clearTimeout(this.chooseTimeout);
@@ -540,12 +606,44 @@
         border-bottom-left-radius: 10px;
         margin-top: 110px;
         max-height: 460px;
+        max-width: 300px;
     }
 
-    .users img {
+    .user-headline {
+        font-family: 'Fredoka One', cursive;
+        font-size: 25px;
+        color: rgba(0, 0, 0, 0.6);
+        margin-bottom: 5px;
+    }
+
+    .single-user {
+        display: flex;
+        text-align: left;
+    }
+
+    .single-user > div {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .single-user > img {
         border-radius: 50%;
-        width: 70px;
-        height: 70px;
+        width: 40px;
+        height: 40px;
+        display: inline-block;
+        margin: 8px 10px 5px 5px;
+    }
+
+    .single-user > div > p {
+        margin: 0;
+        display: inline-block;
+        padding: 2px;
+        font-size: 18px;
+        color: rgba(0, 0, 0, 0.8);
+    }
+
+    .single-user-user {
+        font-weight: bold;
     }
 
     .center-content {
@@ -582,15 +680,15 @@
     }
 
     .draw-content {
-        /*width: 800px;*/
-        /*height: 500px;*/
+        width: 800px;
+        height: 500px;
     }
 
     .round-end {
         width: 800px;
         height: 500px;
-        background-color: rgba(0, 0, 0, 0.8);
-        border-radius: 10px;
+        background-color: rgba(0, 0, 0, 0.7);
+        border-radius: 10px 10px 0 0;
         box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.3);
         padding: 50px;
         font-size: 30px;
@@ -598,6 +696,8 @@
         color: white;
         text-align: center;
         overflow-y: auto;
+        position: absolute;
+        z-index: 3;
     }
 
     .round-info-reveal {
@@ -618,20 +718,60 @@
         display: inline-block;
     }
 
+    .round-info-rank {
+        color: lime;
+        display: inline-block;
+        vertical-align: top;
+        position: relative;
+        bottom: 3px;
+        margin-right: 10px;
+    }
+
     .round-info-name {
         color: rgba(255, 255, 255, 0.6);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+        display: inline-block;
+        vertical-align: top;
+        position: relative;
+        bottom: 3px;
     }
 
     .round-info-total {
         color: rgba(255, 255, 255, 0.6);
+        display: inline-block;
+        vertical-align: top;
+        position: relative;
+        bottom: 3px;
+        margin-left: 5px;
+    }
+
+    .round-info-total2 {
+        color: rgba(255, 255, 255, 0.9);
+        display: inline-block;
+        vertical-align: top;
+        position: relative;
+        bottom: 3px;
+        margin-left: 5px;
     }
 
     .round-info-plus {
         color: lime;
+        display: inline-block;
+        vertical-align: top;
+        position: relative;
+        bottom: 3px;
+        margin: 0 5px;
     }
 
     .round-info-new {
         color: lime;
+        display: inline-block;
+        vertical-align: top;
+        position: relative;
+        bottom: 3px;
     }
 
     .choose-word p {
@@ -645,6 +785,7 @@
     }
 
     .draw {
+        position: absolute;
         width: 800px;
         height: 580px;
         background-color: rgba(255, 255, 255, 0.25);
@@ -654,6 +795,7 @@
     }
 
     .stream-viewer {
+        position: absolute;
         width: 800px;
         height: 500px;
         background-color: rgba(255, 255, 255, 0.25);
@@ -665,7 +807,7 @@
     .chat {
         background-color: rgba(255, 255, 255, 0.5);
         height: 460px;
-        width: 300px;
+        width: 350px;
         border-top-right-radius: 10px;
         border-bottom-right-radius: 10px;
         margin-top: 110px;
@@ -678,6 +820,7 @@
         width: 100%;
         padding: 10px;
         overflow-y: auto;
+        overflow-x: hidden;
     }
 
     .chat-field {
@@ -700,10 +843,28 @@
         background-color: white;
         border-radius: 4px;
         padding: 3px 7px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 120px;
+        display: inline-block;
+        height: 30px;
+        vertical-align: middle;
     }
 
     .chat-message-text {
+        min-height: 30px;
+        display: inline-block;
+        vertical-align: middle;
+        padding: 3px 0;
+        overflow-wrap: anywhere;
+    }
 
+    .chat-message-spacer {
+        margin: 5px;
+        display: inline-block;
+        height: 20px;
+        vertical-align: middle;
     }
 
     .chat-message-correct {
@@ -712,6 +873,9 @@
         background-color: white;
         border-radius: 4px;
         padding: 3px 7px;
+        display: inline-block;
+        height: 30px;
+        vertical-align: middle;
     }
 
     form.v-form {
