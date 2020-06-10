@@ -450,6 +450,11 @@
                 this.showColorPicker = false;
                 CommandStack.executeCommand(new ClearCommand(this.drawables));
             },
+            resetCanvas() {
+                this.showColorPicker = false;
+                CommandStack.reset();
+                this.drawables = [];
+            },
             selectColor(r, g, b, a = 255, updatePick = true) {
                 this.activeColor = [r, g, b, a];
                 if (updatePick) {

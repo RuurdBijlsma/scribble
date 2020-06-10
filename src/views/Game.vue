@@ -4,7 +4,8 @@
             <div class="users">
                 <div v-for="user in everyone">
                     <img :src="user.avatar" alt="User avatar">
-                    <p v-if="user.name">{{user.name}}</p>
+                    <p v-if="user.name">{{user.name}}: {{Math.round(user.rounds.map(r=>r.points).reduce((a,b)=>a+b,
+                        0))}}</p>
                     <p v-else><i>Unnamed</i></p>
                 </div>
             </div>
@@ -18,21 +19,40 @@
                         <span v-else>{{wordHint}}</span>
                     </div>
                     <div class="round-info">
-                        <span>Round {{currentRound}}</span>
+                        <span v-if="settings && settings.rounds">Round {{Math.ceil(currentRound / everyone.length)}} / {{settings.rounds}}</span>
                     </div>
                 </div>
                 <div class="time-left-bar"
                      v-if="settings"
                      :style="`width:calc(${Math.ceil(timeLeft / settings.time * 1000)/10}% - 20px)`"></div>
                 <div class="draw-content">
+                    <div class="other-choosing" v-if="otherChoosing">
+                        A player is choosing a word to draw
+                    </div>
+
+                    <div class="round-end" v-if="showEndRound">
+                        <p class="round-info-reveal">The word was</p>
+                        <p class="round-info-guess-word">{{guessWord}}</p>
+                        <p class="round-info-reveal">Scores</p>
+                        <div v-for="user in everyoneSorted"
+                             class="round-info-user" :key="user.id">
+                            <span class="round-info-name">{{user.name}}:</span>
+                            <span class="round-info-total">
+                            {{Math.round(user.rounds.slice(0, currentRound - 1).map(r=>r.points).reduce((a,b)=>a+b, 0))}}
+                            </span>
+                            <span class="round-info-plus">+</span>
+                            <span class="round-info-new">{{Math.round(user.rounds[currentRound-1].points)}}</span>
+                        </div>
+                    </div>
+
                     <video :srcObject.prop="activePlayer !== null ? activePlayer.stream : null"
-                           v-if="activePlayer !== me"
+                           v-else-if="activePlayer !== me && !otherChoosing"
                            ref="streamViewer"
                            autoplay class="stream-viewer"
                            width="800"
                            height="500"/>
 
-                    <div class="choose-word" v-if="choosingWord && activePlayer === me">
+                    <div class="choose-word" v-else-if="choosingWord && activePlayer === me">
                         <p class="headline">Choose a word to draw</p>
                         <div class="word-choices">
                             <div v-for="word in wordChoices">
@@ -40,10 +60,11 @@
                             </div>
                         </div>
                     </div>
-                    <simple-draw v-else v-show="activePlayer === me"
+
+                    <simple-draw v-show="activePlayer === me && !choosingWord && !showEndRound && !otherChoosing"
                                  class="draw"
                                  ref="draw"
-                                 :updateCanvas="activePlayer === me"/>
+                                 :updateCanvas="activePlayer === me && !choosingWord && !showEndRound && !otherChoosing"/>
                 </div>
             </div>
             <div class="chat">
@@ -94,11 +115,14 @@
             choosingWord: false,
             wordChoices: [],
             chooseTimeout: -1,
+            showEndRound: false,
+            roundStartTime: 0,
+            otherChoosing: false,
         }),
         async mounted() {
             console.log('-------------{MOUNTED}--------------');
             //debug
-            if (true) {
+            if (false) {
                 this.$store.commit('game', {
                     host: true,
                     me: new User({
@@ -109,7 +133,7 @@
                         me: true,
                     }),
                     others: [],
-                    settings: {rounds: 5, time: 100, language: 'English'},
+                    settings: {rounds: 5, time: 10, language: 'English'},
                 });
             }
 
@@ -118,6 +142,13 @@
             this.me = this.$store.state.game.me;
             this.others = this.$store.state.game.others;
             this.everyone = [this.me, ...this.others].sort((a, b) => a > b ? 1 : -1);
+
+            this.everyone.forEach(u => u.rounds = [...new Array(this.settings.rounds * this.everyone.length)].map(() => ({
+                done: false,
+                guessTime: -1,
+                points: 0
+            })));
+            console.log(this.everyone);
 
             let loadRemaining = this.others.length;
             if (loadRemaining === 0)
@@ -153,6 +184,14 @@
                         break;
                     case 'chat':
                         this.submitChatText(user, params[0]);
+                        break;
+                    case 'endRound':
+                        console.log("Endround", params[0]);
+                        for (let {id: userId, rounds} of params[0]) {
+                            let user = this.everyone.find(u => u.id === userId);
+                            user.rounds = rounds;
+                        }
+                        this.endRound();
                         break;
                 }
             });
@@ -202,6 +241,7 @@
                 this.mesh.broadcastStream(this.$refs.draw.getStream());
             },
             async generalStartRound(player) {
+                this.showEndRound = false;
                 console.log("[generalStartRound]");
                 this.currentRound++;
                 this.activePlayer = player;
@@ -209,20 +249,24 @@
 
                 if (this.activePlayer === this.me) {
                     this.chooseWord();
+                } else {
+                    this.otherChoosing = true;
                 }
             },
             async generalStartRoundAfterWordChoice() {
-                let roundStartTime = performance.now();
+                this.otherChoosing = false;
+                this.$refs.draw.resetCanvas();
+                this.roundStartTime = performance.now();
                 let interval;
                 interval = setInterval(() => {
-                    let timePassed = performance.now() - roundStartTime;
+                    let timePassed = performance.now() - this.roundStartTime;
                     this.timeLeft = this.settings.time - timePassed / 1000;
                     if (this.timeLeft < 0) {
                         this.timeLeft = 0;
                         this.endRound();
                         clearInterval(interval);
                     }
-                }, 50);
+                }, 1000 / 30);
                 this.roundIntervals.push(interval);
             },
             //Only call this on the person that is drawing this round
@@ -235,7 +279,7 @@
 
                 this.setGuessWord(chosenWord);
 
-                let wordHint = this.getWordHint(chosenWord, 1 / 10);
+                let wordHint = this.getWordHint(chosenWord, 1 / 20);
                 this.mesh.broadcast(['wordHint', wordHint]);
                 //After 1/4 of the total time give the first hint
                 this.roundTimeouts.push(setTimeout(() => {
@@ -267,8 +311,17 @@
                     clearTimeout(timeout);
                 for (let interval of this.roundIntervals)
                     clearInterval(interval);
-
-                alert("End round");
+                this.showEndRound = true;
+                if (this.me.host) {
+                    this.roundTimeouts.push(setTimeout(() => {
+                        let currentPlayerIndex = this.everyone.indexOf(this.activePlayer);
+                        let nextPlayerIndex = (currentPlayerIndex + 1) % this.everyone.length;
+                        if (nextPlayerIndex < 0)
+                            nextPlayerIndex += this.everyone.length;
+                        this.generalStartRound(this.everyone[nextPlayerIndex]);
+                        this.mesh.broadcast(['startRound', this.activePlayer.id]);
+                    }, 1000 * 10));
+                }
             },
             getRandom(arr, n) {
                 const result = new Array(n);
@@ -324,6 +377,17 @@
             setWordHint(wordHint) {
                 this.wordHint = wordHint;
             },
+            calculateScore(isArtist, guessTime, totalTime, rank, guesses, total) {
+                //Rank 1 to total, rank of guess
+                //Total is amount of users with correct guesses there are
+                if (isArtist) {
+                    return (total / guesses) * 10;
+                } else {
+                    let timeScore = guessTime / totalTime;
+                    let rankScore = rank / total;
+                    return 1 / (timeScore * rankScore);
+                }
+            },
             sendChat(e) {
                 e.preventDefault();
                 this.mesh.broadcast(['chat', this.chatText]);
@@ -331,17 +395,32 @@
                 this.chatText = '';
             },
             submitChatText(user, text) {
-                if (text === this.guessWord) {
+                if (text.toLowerCase() === this.guessWord.toLowerCase() && user !== this.activePlayer) {
                     this.chatMessages.push({
                         id: Math.floor(Math.random() * 1000000),
                         type: 'correct',
                         user,
                     });
                     //todo record time of completion for the user
-                    user.done = true;
-                    // if no one is not done:
-                    if (!this.everyone.some(u => !u.done)) {
-                        this.endRound();
+                    if (this.me.host) {
+                        let roundI = this.currentRound - 1;
+                        let guessTime = (performance.now() - this.roundStartTime) / 1000;
+                        user.rounds[roundI].guessTime = guessTime;
+                        user.rounds[roundI].done = true;
+                        // if no one is not done:
+                        if (!this.everyone.filter(u => u !== this.activePlayer).some(u => !u.rounds[roundI].done)) {
+                            this.everyone.forEach(user => {
+                                let userGuessTime = user.rounds[roundI].guessTime;
+                                //How many users guessed right before me + 1:
+                                let userRank = this.everyone.filter(u => u.rounds[roundI].guessTime < userGuessTime).length + 1;
+                                let totalGuesses = this.everyone.filter(u => u.rounds[roundI].done).length;
+                                user.rounds[roundI].points = this.calculateScore(user === this.activePlayer, guessTime, this.settings.time, userRank, totalGuesses, this.everyone.length);
+                            });
+                            let usersInfo = this.everyone.map(u => ({id: u.id, rounds: u.rounds}));
+                            console.log("Broadcast endround", usersInfo);
+                            this.mesh.broadcast(['endRound', usersInfo]);
+                            this.endRound();
+                        }
                     }
                 } else {
                     this.chatMessages.push({
@@ -391,6 +470,9 @@
             secondsLeft() {
                 return Math.round(this.timeLeft);
             },
+            everyoneSorted() {
+                return this.everyone.sort((a, b) => b.rounds[this.currentRound - 1].points - a.rounds[this.currentRound - 1].points);
+            }
         },
         beforeDestroy() {
             clearTimeout(this.chooseTimeout);
@@ -407,7 +489,7 @@
         background-color: lime;
         border-top-right-radius: 8px;
         border-top-left-radius: 8px;
-        margin-left: 10px;
+        margin: 0 auto;
     }
 
     .top-info {
@@ -421,13 +503,16 @@
     }
 
     .top-info > div {
-        width: 33%;
+        width: 160px;
         text-align: center;
     }
 
     .word {
         font-size: 30px;
         letter-spacing: 3px;
+        flex-grow: 1;
+        display: inline-block;
+        word-wrap: break-word;
     }
 
     .time-left, .round-info {
@@ -467,9 +552,9 @@
         flex-direction: column;
     }
 
-    .choose-word {
+    .other-choosing {
+        height: 500px;
         width: 800px;
-        height: 580px;
         background-color: rgba(0, 0, 0, 0.8);
         border-radius: 10px;
         box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.3);
@@ -478,6 +563,66 @@
         font-family: 'Fredoka One', cursive !important;
         color: white;
         text-align: center;
+        overflow-y: auto;
+    }
+
+    .choose-word {
+        width: 800px;
+        height: 500px;
+        background-color: rgba(0, 0, 0, 0.8);
+        border-radius: 10px;
+        box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.3);
+        padding: 50px;
+        font-size: 40px;
+        font-family: 'Fredoka One', cursive !important;
+        color: white;
+        text-align: center;
+        overflow-y: auto;
+    }
+
+    .draw-content {
+        /*width: 800px;*/
+        /*height: 500px;*/
+    }
+
+    .round-end {
+        width: 800px;
+        height: 500px;
+        background-color: rgba(0, 0, 0, 0.8);
+        border-radius: 10px;
+        box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.3);
+        padding: 50px;
+        font-size: 30px;
+        font-family: 'Fredoka One', cursive !important;
+        color: white;
+        text-align: center;
+        overflow-y: auto;
+    }
+
+    .round-info-reveal {
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 20px;
+    }
+
+    .round-info-guess-word {
+        color: white;
+        font-size: 40px;
+    }
+
+    .round-info-name {
+        color: rgba(255, 255, 255, 0.6);
+    }
+
+    .round-info-total {
+        color: rgba(255, 255, 255, 0.6);
+    }
+
+    .round-info-plus {
+        color: lime;
+    }
+
+    .round-info-new {
+        color: lime;
     }
 
     .choose-word p {

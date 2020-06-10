@@ -172,7 +172,7 @@
             }
         },
         beforeDestroy() {
-            this.mesh.destroy();
+            // this.mesh.destroy();
             console.warn('DESTROY LOBBY');
             clearInterval(this.hostInterval);
         },

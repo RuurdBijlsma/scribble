@@ -6,5 +6,6 @@ export default class User {
         this.host = host;
         this.me = me;
         this.avatar = avatar;
+        this.rounds = []
     }
 }
