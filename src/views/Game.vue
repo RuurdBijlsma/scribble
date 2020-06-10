@@ -36,6 +36,7 @@
                         <p class="round-info-reveal">Scores</p>
                         <div v-for="user in everyoneSorted"
                              class="round-info-user" :key="user.id">
+                            <img :src="user.avatar" class="round-info-avatar" alt="User avatar">
                             <span class="round-info-name">{{user.name}}:</span>
                             <span class="round-info-total">
                             {{Math.round(user.rounds.slice(0, currentRound - 1).map(r=>r.points).reduce((a,b)=>a+b, 0))}}
@@ -122,7 +123,7 @@
         async mounted() {
             console.log('-------------{MOUNTED}--------------');
             //debug
-            if (false) {
+            if (true) {
                 this.$store.commit('game', {
                     host: true,
                     me: new User({
@@ -607,6 +608,14 @@
     .round-info-guess-word {
         color: white;
         font-size: 40px;
+    }
+
+    .round-info-avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        margin-right: 10px;
+        display: inline-block;
     }
 
     .round-info-name {
