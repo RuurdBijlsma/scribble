@@ -130,6 +130,8 @@
     import SimpleDraw from "@/components/SimpleDraw";
     import User from "@/js/User";
     import words from '@/assets/words.json';
+    import VolumeSound from "@/js/VolumeSound";
+    import FrequencySound from "@/js/FrequencySound";
 
     export default {
         name: 'Game',
@@ -158,11 +160,16 @@
             roundStartTime: 0,
             otherChoosing: false,
             visibleRound: 1,
+            sounds: {
+                correctGuess: new VolumeSound('sounds/correct.ogg'),
+                timeUp: new VolumeSound('sounds/helaas.ogg'),
+                endGame: new VolumeSound('sounds/hoera.ogg'),
+            }
         }),
         async mounted() {
             console.log('-------------{MOUNTED}--------------');
             //debug
-            if (false) {
+            if (true) {
                 this.$store.commit('game', {
                     host: true,
                     me: new User({
@@ -173,9 +180,10 @@
                         me: true,
                     }),
                     others: [],
-                    settings: {rounds: 5, time: 60, language: 'English'},
+                    settings: {rounds: 2, time: 4, language: 'English'},
                 });
             }
+
 
             this.mesh = this.$store.state.mesh;
             this.settings = this.$store.state.game.settings;
@@ -256,11 +264,6 @@
                 console.log("me is not host", this.me, this.me.host, 'found host:', hostUser);
                 this.mesh.send(hostUser.id, ['loaded']);
             }
-            // let wordHint;
-            // let chosenWord = 'ladder';
-            // for (let i = 0; i < 10; i++) {
-            //     wordHint = this.getWordHint(chosenWord, 1 / 4, wordHint);
-            // }
         },
         methods: {
             hostStart() {
@@ -310,6 +313,7 @@
                     this.timeLeft = this.settings.time - timePassed / 1000;
                     if (this.timeLeft < 0) {
                         this.timeLeft = 0;
+                        this.sounds.timeUp.play();
                         this.endRound();
                         clearInterval(interval);
                     }
@@ -361,8 +365,7 @@
 
                 let currentPlayerIndex = this.everyoneSortedById.indexOf(this.activePlayer);
                 let nextPlayerIndex = (currentPlayerIndex + 1) % this.everyone.length;
-                if (nextPlayerIndex === 0)
-                    this.visibleRound++;
+
                 if (nextPlayerIndex < 0)
                     nextPlayerIndex += this.everyone.length;
 
@@ -374,9 +377,14 @@
                         this.guessWord = '';
                         this.wordHint = '';
 
+                        if (nextPlayerIndex === 0)
+                            this.visibleRound++;
+
                         if (this.visibleRound > this.settings.rounds) {
+                            this.visibleRound = this.settings.rounds;
                             this.showEndRound = false;
                             this.showEndGame = true;
+                            this.sounds.endGame.play();
                         } else {
                             this.generalStartRound(this.everyoneSortedById[nextPlayerIndex]);
                             this.mesh.broadcast(['startRound', this.activePlayer.id]);
@@ -457,6 +465,7 @@
             },
             submitChatText(user, text) {
                 if (text.toLowerCase() === this.guessWord.toLowerCase() && user !== this.activePlayer) {
+                    this.sounds.correctGuess.play();
                     this.chatMessages.push({
                         id: Math.floor(Math.random() * 1000000),
                         type: 'correct',
