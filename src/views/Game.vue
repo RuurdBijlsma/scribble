@@ -169,7 +169,7 @@
         async mounted() {
             console.log('-------------{MOUNTED}--------------');
             //debug
-            if (true) {
+            if (false) {
                 this.$store.commit('game', {
                     host: true,
                     me: new User({
