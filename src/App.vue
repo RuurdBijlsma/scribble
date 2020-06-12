@@ -15,6 +15,8 @@
     // * Testing
     // * Remove bugs
     // * BIG BUG ALERT 1 person guesses right, then the time runs out, no one gets points
+    // * Highlight when lobby is public on lobby screen
+    // * Find out why it's not centered in production version
     //Far away todo:
     // * No more bugs :)
     // * Get words from chat guesses?

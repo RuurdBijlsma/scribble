@@ -1,6 +1,7 @@
 if (process.env.NODE_ENV === 'production') {
     console.log("%cZIE IK EEN ZIELIGE BITCH CHEATER IN MN CONSOLE?", "background: orange; color: black; font-size: x-large");
     window.console.log = () => ({});
+    window.console.warn = () => ({});
 }
 
 import Vue from 'vue'

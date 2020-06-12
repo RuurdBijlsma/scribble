@@ -164,7 +164,6 @@
                 this.mesh.broadcastRemoveStream(this.me.stream);
                 //Remove all listeners used on this page
                 this.mesh.removeAllListeners();
-                console.warn("Calling destroy");
                 this.$router.push('/game');
                 // console.log(gameId);
             }
@@ -176,7 +175,6 @@
         },
         beforeDestroy() {
             // this.mesh.destroy();
-            console.warn('DESTROY LOBBY');
             clearInterval(this.hostInterval);
         },
     }
