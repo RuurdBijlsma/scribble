@@ -14,6 +14,7 @@
     // * When new player joins on the lobby screen, the host should tell that player that the game is active, the new player then goes to /game (how to do the canvas stream?) (new user gets 2 events in lobby screen ['stream'(from each player), 'gameActive'(to indicate active game, param is relevant game state)
     // * Testing
     // * Remove bugs
+    // * BIG BUG ALERT 1 person guesses right, then the time runs out, no one gets points
     //Far away todo:
     // * No more bugs :)
     // * Get words from chat guesses?

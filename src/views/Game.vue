@@ -142,7 +142,6 @@
     import VolumeSound from "@/js/VolumeSound";
     import levenshtein from 'fast-levenshtein';
     import devtools from 'devtools-detect';
-    import FrequencySound from "@/js/FrequencySound";
 
     export default {
         name: 'Game',
@@ -377,7 +376,10 @@
                     if (this.timeLeft < 0) {
                         this.timeLeft = 0;
                         this.sounds.timeUp.play();
-                        this.endRound();
+                        if (this.me.host)
+                            this.hostEndRound();
+                        else
+                            this.endRound();
                         clearInterval(interval);
                     }
                 }, 1000 / 30);
@@ -524,6 +526,7 @@
                 if (isArtist) {
                     return 100 + (guesses / total * 170)
                 } else {
+                    console.log({isArtist, guessTime, totalTime, rank, guesses, total, guessedRight});
                     if (!guessedRight)
                         return 0;
                     let timeScore = guessTime / totalTime;
@@ -552,12 +555,9 @@
                     user !== this.activePlayer &&
                     !user.rounds[roundI].done &&
                     !(this.showEndRound || this.showEndGame);
-                if (
-                    text.toLowerCase() === this.guessWord.toLowerCase() && guessAllowed
-                ) {
+                if (text.toLowerCase() === this.guessWord.toLowerCase() && guessAllowed) {
                     user.rounds[roundI].done = true;
-                    let guessTime = (performance.now() - this.roundStartTime) / 1000;
-                    user.rounds[roundI].guessTime = guessTime;
+                    user.rounds[roundI].guessTime = (performance.now() - this.roundStartTime) / 1000;
 
                     this.sounds.correctGuess.play();
                     this.chatMessages.push({
