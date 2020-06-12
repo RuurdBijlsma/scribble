@@ -107,6 +107,7 @@
                         this.settings = params[0];
                 } else if (type === 'kicked') {
                     // console.log('kicked', params);
+                    this.mesh.destroy();
                     this.$router.push('/kicked?msg=' + params[0]);
                 } else if (type === 'start') {
                     userMap[id].host = true;
@@ -115,7 +116,10 @@
                 console.log("userinfo", id, 'data', type, params);
             });
 
-            await this.mesh.join(gameId, true);
+            let isPublic = this.$route.query.public === 'true';
+            console.log({isPublic});
+
+            await this.mesh.join(gameId, !isPublic);
             console.log("Joined room", gameId);
             this.mesh.broadcastStream(this.me.stream);
         },
@@ -137,7 +141,6 @@
                 let index = this.users.indexOf(user);
                 if (index > -1) {
                     this.mesh.send(user.id, ['kicked', 'lmao get fukt']);
-                    this.users.splice(index, 1);
                 }
             },
             updateSettings(settings) {

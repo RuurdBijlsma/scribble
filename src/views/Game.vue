@@ -11,6 +11,8 @@
                         <p>{{Math.round(activePlayer.rounds.map(r=>r.points).reduce((a,b)=>a+b, 0))}} pts</p>
                     </div>
                     <p v-else><i>Unnamed</i></p>
+                    <v-btn v-if="me.host && me!==activePlayer" text color="error" @click="kick(activePlayer)">Kick
+                    </v-btn>
                 </div>
                 <div class="user-headline">Guessing</div>
                 <div v-for="user in everyone.filter(u=>u!==activePlayer)" class="single-user">
@@ -21,6 +23,7 @@
                         <p>{{Math.round(user.rounds.map(r=>r.points).reduce((a,b)=>a+b, 0))}} pts</p>
                     </div>
                     <p v-else><i>Unnamed</i></p>
+                    <v-btn v-if="me.host && me!==user" text color="error" @click="kick(user)">Kick</v-btn>
                 </div>
             </div>
             <div class="center-content">
@@ -114,6 +117,11 @@
                                 <span :style="`color: ${stringToColor(message.user.id)}`" class="chat-message-user">{{message.user.name}}</span>
                                 <span class="chat-message-correct">Guessed correctly!</span>
                             </div>
+                            <div v-else-if="message.type==='event'">
+                                <span class="chat-message-event" :style="`color: ${message.color}`">
+                                    {{message.text}}
+                                </span>
+                            </div>
                         </div>
                     </div>
                     <v-text-field placeholder="Make guess" class="chat-field" auto filled v-model="chatText"/>
@@ -130,7 +138,10 @@
     import SimpleDraw from "@/components/SimpleDraw";
     import User from "@/js/User";
     import words from '@/assets/words.json';
+    // const words = ['Wall-E the Movie','Wall-E the Movie','Wall-E the Movie','Wall-E the Movie'];
     import VolumeSound from "@/js/VolumeSound";
+    import levenshtein from 'fast-levenshtein';
+    import devtools from 'devtools-detect';
     import FrequencySound from "@/js/FrequencySound";
 
     export default {
@@ -180,7 +191,7 @@
                         me: true,
                     }),
                     others: [],
-                    settings: {rounds: 2, time: 4, language: 'English'},
+                    settings: {rounds: 2, time: 20, language: 'English'},
                 });
             }
 
@@ -233,6 +244,26 @@
                     case 'chat':
                         this.submitChatText(user, params[0]);
                         break;
+                    case 'kicked':
+                        if (params[0] === this.me.id) {
+                            setInterval(() => {
+                                this.sounds.timeUp.play(1);
+                            }, 600);
+                            this.mesh.destroy();
+                            this.$router.push('/kicked?msg=' + params[1]);
+                        } else {
+                            this.addKickedMessage(user);
+                        }
+                        break;
+                    case 'devtools':
+                        this.chatMessages.push({
+                            id: Math.floor(Math.random() * 1000000),
+                            type: 'event',
+                            color: 'maroon',
+                            text: user.name + (params[0] ? ' opened the console! 😡' : 'has closed the console 👌'),
+                            user,
+                        });
+                        break;
                     case 'endRound':
                         console.log("Endround", params[0]);
                         for (let {id: userId, rounds} of params[0]) {
@@ -244,10 +275,14 @@
                 }
             });
             this.mesh.on('disconnect', id => {
-                let user = this.everyone.findIndex(u => u.id === id);
+                let user = this.everyone.find(u => u.id === id);
+                console.log("Disconnected", user);
                 this.everyone.splice(this.everyone.indexOf(user), 1);
                 this.others.splice(this.others.indexOf(user), 1);
                 this.chooseNewHost();
+                if (user === this.activePlayer && this.me.host) {
+                    this.hostEndRound();
+                }
             });
             this.mesh.on('stream', (id, stream) => {
                 console.log("Received stream", id, stream);
@@ -258,7 +293,25 @@
                 console.log("me is host", this.me, this.me.host);
                 //send start signal to peers now to make sure the host is first on this page
                 this.mesh.broadcast(['start', this.settings]);
+
+                this.mesh.on('connect', id => {
+                    console.log("userinfo", id, 'connect');
+
+                    this.mesh.sendStream(id, this.$refs.draw.getStream());
+                    this.mesh.send(id, ['gameActive', {
+                        users: this.everyone,
+                        settings: this.settings,
+                        round: this.visibleRound,
+                        activePlayer: this.activePlayer.id,
+                    }]);
+                });
             } else {
+                this.mesh.on('connect', id => {
+                    console.log("userinfo", id, 'connect');
+
+                    this.mesh.sendStream(id, this.$refs.draw.getStream());
+                });
+
                 //Tell host that this peer is loaded
                 let hostUser = this.others.find(user => user.host);
                 console.log("me is not host", this.me, this.me.host, 'found host:', hostUser);
@@ -282,6 +335,16 @@
             generalStart() {
                 console.log("[generalStart]");
                 this.mesh.broadcastStream(this.$refs.draw.getStream());
+
+                if (devtools.isOpen) {
+                    this.reportCheater(true);
+                }
+                window.addEventListener('devtoolschange', event => {
+                    this.reportCheater(event.detail.isOpen);
+                });
+            },
+            reportCheater(isOpen) {
+                this.mesh.broadcast(['devtools', isOpen]);
             },
             async generalStartRound(player) {
                 this.showEndRound = false;
@@ -371,26 +434,25 @@
 
                 this.showEndRound = true;
 
-                if (this.me.host) {
-                    this.roundTimeouts.push(setTimeout(() => {
-                        this.chatMessages = [];
-                        this.guessWord = '';
-                        this.wordHint = '';
+                this.roundTimeouts.push(setTimeout(() => {
+                    this.chatMessages = [];
+                    this.guessWord = '';
+                    this.wordHint = '';
 
-                        if (nextPlayerIndex === 0)
-                            this.visibleRound++;
+                    if (nextPlayerIndex === 0)
+                        this.visibleRound++;
 
-                        if (this.visibleRound > this.settings.rounds) {
-                            this.visibleRound = this.settings.rounds;
-                            this.showEndRound = false;
-                            this.showEndGame = true;
-                            this.sounds.endGame.play();
-                        } else {
-                            this.generalStartRound(this.everyoneSortedById[nextPlayerIndex]);
-                            this.mesh.broadcast(['startRound', this.activePlayer.id]);
-                        }
-                    }, 1000 * 10));
-                }
+                    if (this.visibleRound > this.settings.rounds) {
+                        this.visibleRound = this.settings.rounds;
+                        this.showEndRound = false;
+                        this.showEndGame = true;
+                        this.sounds.endGame.play();
+                    } else if (this.me.host) {
+                        this.generalStartRound(this.everyoneSortedById[nextPlayerIndex]);
+                        this.mesh.broadcast(['startRound', this.activePlayer.id]);
+                    }
+                }, 1000 * 7.5));
+
             },
             getRandom(arr, n) {
                 const result = new Array(n);
@@ -414,6 +476,16 @@
                 }, 15000);
             },
             getWordHint(word, revealPercentage, hiddenWord = '_'.repeat(word.length)) {
+                let alwaysRevealCharacters = [' ', '-'];
+                let instantReveals = [];
+                for (let i = 0; i < word.length; i++)
+                    if (alwaysRevealCharacters.includes(word[i]))
+                        instantReveals.push(i);
+                let hiddenWordArray = hiddenWord.split('');
+                for (let index of instantReveals)
+                    hiddenWordArray[index] = word[index];
+                hiddenWord = hiddenWordArray.join('');
+
                 revealPercentage = Math.max(0, Math.min(1, revealPercentage));
 
                 if (word.length !== hiddenWord.length)
@@ -446,16 +518,27 @@
             setWordHint(wordHint) {
                 this.wordHint = wordHint;
             },
-            calculateScore(isArtist, guessTime, totalTime, rank, guesses, total) {
+            calculateScore(isArtist, guessTime, totalTime, rank, guesses, total, guessedRight) {
                 //Rank 1 to total, rank of guess
                 //Total is amount of users with correct guesses there are
                 if (isArtist) {
-                    return (total / guesses) * 10;
+                    return 100 + (guesses / total * 170)
                 } else {
+                    if (!guessedRight)
+                        return 0;
                     let timeScore = guessTime / totalTime;
                     let rankScore = rank / total;
-                    return 1 / (timeScore * rankScore);
+                    return (0.2 * timeScore + 0.8 * rankScore) * 400;
                 }
+            },
+            addKickedMessage(user) {
+                this.chatMessages.push({
+                    id: Math.floor(Math.random() * 1000000),
+                    type: 'event',
+                    color: 'black',
+                    text: user.name + ' has been kicked!',
+                    user,
+                });
             },
             sendChat(e) {
                 e.preventDefault();
@@ -464,41 +547,46 @@
                 this.chatText = '';
             },
             submitChatText(user, text) {
-                if (text.toLowerCase() === this.guessWord.toLowerCase() && user !== this.activePlayer) {
+                let roundI = this.currentRound - 1;
+                let guessAllowed =
+                    user !== this.activePlayer &&
+                    !user.rounds[roundI].done &&
+                    !(this.showEndRound || this.showEndGame);
+                if (
+                    text.toLowerCase() === this.guessWord.toLowerCase() && guessAllowed
+                ) {
+                    user.rounds[roundI].done = true;
+                    let guessTime = (performance.now() - this.roundStartTime) / 1000;
+                    user.rounds[roundI].guessTime = guessTime;
+
                     this.sounds.correctGuess.play();
                     this.chatMessages.push({
                         id: Math.floor(Math.random() * 1000000),
                         type: 'correct',
                         user,
                     });
-                    //todo record time of completion for the user
                     if (this.me.host) {
-                        let roundI = this.currentRound - 1;
-                        let guessTime = (performance.now() - this.roundStartTime) / 1000;
-                        user.rounds[roundI].guessTime = guessTime;
-                        user.rounds[roundI].done = true;
                         // if no one is not done:
                         if (!this.everyone.filter(u => u !== this.activePlayer).some(u => !u.rounds[roundI].done)) {
-                            this.everyone.forEach(user => {
-                                let userGuessTime = user.rounds[roundI].guessTime;
-                                //How many users guessed right before me + 1:
-                                let userRank = this.everyone.filter(u => u.rounds[roundI].guessTime < userGuessTime).length + 1;
-                                let totalGuesses = this.everyone.filter(u => u.rounds[roundI].done).length;
-                                user.rounds[roundI].points = this.calculateScore(user === this.activePlayer, guessTime, this.settings.time, userRank, totalGuesses, this.everyone.length);
-                            });
-                            let usersInfo = this.everyone.map(u => ({id: u.id, rounds: u.rounds}));
-                            console.log("Broadcast endround", usersInfo);
-                            this.mesh.broadcast(['endRound', usersInfo]);
-                            this.endRound();
+                            this.hostEndRound();
                         }
                     }
                 } else {
+                    let distance = levenshtein.get(text.toLowerCase(), this.guessWord.toLowerCase(), {useCollator: true});
+                    console.log("levenshtein", distance, guessAllowed);
                     this.chatMessages.push({
                         id: Math.floor(Math.random() * 1000000),
                         type: 'guess',
                         text,
                         user,
                     });
+                    if (distance <= 1 && guessAllowed && user === this.me)
+                        this.chatMessages.push({
+                            id: Math.floor(Math.random() * 1000000),
+                            text: `Close! '${text}' is one letter off`,
+                            type: 'event',
+                            user,
+                        });
                 }
 
                 const chat = this.$refs.chatContent;
@@ -509,6 +597,20 @@
                         behavior: "smooth",
                     });
                 }, 50);
+            },
+            hostEndRound() {
+                let roundI = this.currentRound - 1;
+                this.everyone.forEach(user => {
+                    let userGuessTime = user.rounds[roundI].guessTime;
+                    //How many users guessed right before me + 1:
+                    let userRank = this.everyone.filter(u => u.rounds[roundI].guessTime < userGuessTime).length + 1;
+                    let totalGuesses = this.everyone.filter(u => u.rounds[roundI].done).length;
+                    user.rounds[roundI].points = this.calculateScore(user === this.activePlayer, userGuessTime, this.settings.time, userRank, totalGuesses, this.everyone.length, user.rounds[roundI].done);
+                });
+                let usersInfo = this.everyone.map(u => ({id: u.id, rounds: u.rounds}));
+                console.log("Broadcast endround", usersInfo);
+                this.mesh.broadcast(['endRound', usersInfo]);
+                this.endRound();
             },
             stringToColor(str) {
                 const hashCode = str => {
@@ -533,6 +635,13 @@
                     let newHost = this.everyoneSortedById[0];
                     newHost.host = true;
                     console.log("Host disconnected, migrating host", newHost);
+                }
+            },
+            kick(user) {
+                let index = this.others.indexOf(user);
+                if (index > -1) {
+                    this.mesh.broadcast(['kicked', user.id, '😡😡😡']);
+                    this.addKickedMessage(user);
                 }
             },
         },
@@ -647,7 +756,7 @@
         margin: 0;
         display: inline-block;
         padding: 2px;
-        font-size: 18px;
+        font-size: 16px;
         color: rgba(0, 0, 0, 0.8);
     }
 
@@ -867,6 +976,15 @@
         vertical-align: middle;
         padding: 3px 0;
         overflow-wrap: anywhere;
+    }
+
+    .chat-message-event {
+        min-height: 30px;
+        display: inline-block;
+        vertical-align: middle;
+        padding: 3px 0;
+        overflow-wrap: anywhere;
+        font-style: italic;
     }
 
     .chat-message-spacer {

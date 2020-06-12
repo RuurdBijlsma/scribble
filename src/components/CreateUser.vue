@@ -47,6 +47,9 @@
             if (localStorage.getItem('lastAvatar') !== null) {
                 this.$refs.draw.drawImage(localStorage.lastAvatar, 0, 0);
             }
+            if (localStorage.getItem('lastUserName') !== null) {
+                this.userName = localStorage.lastUserName;
+            }
 
             this.saveInterval = setInterval(() => {
                 localStorage.lastAvatar = this.$refs.draw.$refs.canvas.toDataURL();
@@ -66,6 +69,7 @@
         },
         watch: {
             userName(val, old) {
+                localStorage.lastUserName = this.userName;
                 console.log('user emit');
                 this.userName = val.substr(0, 25);
                 this.$emit('userChange', this.userName);
