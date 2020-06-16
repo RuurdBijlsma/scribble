@@ -1,11 +1,12 @@
 import Sound from "@/js/Sound";
 
 export default class VolumeSound extends Sound {
-    constructor(src) {
+    constructor(src, defaultVolume = 1) {
         super(src);
+        this.defaultVolume = defaultVolume;
     }
 
-    setSource(v=1) {
+    setSource(v = this.defaultVolume) {
         if (!this.context.createGain)
             this.context.createGain = this.context.createGainNode;
         this.gainNode = this.context.createGain();
@@ -24,7 +25,8 @@ export default class VolumeSound extends Sound {
         v = this.volume;
         v *= 3;
         v -= 1;
-        this.gainNode.gain.value = v;
+        console.log("Gain value", v);
+        this.gainNode.gain.setValueAtTime(v, this.context.currentTime);
     }
 
     get volume() {

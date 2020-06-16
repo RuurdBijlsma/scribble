@@ -119,7 +119,7 @@ export default class SimplePeerMesh extends EventEmitter {
         this.log(`Broadcasting to ${this.getConnectedPeerCount()} peers: ${message}`);
         for (let peer in this.peers)
             if (this.peers.hasOwnProperty(peer) && this.peers[peer] !== null) {
-                console.log('broadcasting ', message);
+                // console.log('broadcasting ', message);
                 if (typeof message === 'string')
                     this.peers[peer].send(message);
                 else

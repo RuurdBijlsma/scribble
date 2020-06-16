@@ -77,12 +77,12 @@
                         </div>
                     </div>
 
-                    <video :srcObject.prop="activePlayer !== null ? activePlayer.stream : null"
-                           v-if="activePlayer !== me && !choosingWord && !otherChoosing"
-                           ref="streamViewer"
-                           autoplay class="stream-viewer"
-                           width="800"
-                           height="500"/>
+                    <!--                    <video :srcObject.prop="activePlayer !== null ? activePlayer.stream : null"-->
+                    <!--                           v-if="activePlayer !== me && !choosingWord && !otherChoosing"-->
+                    <!--                           ref="streamViewer"-->
+                    <!--                           autoplay class="stream-viewer"-->
+                    <!--                           width="800"-->
+                    <!--                           height="500"/>-->
 
                     <div class="choose-word" v-else-if="choosingWord && activePlayer === me">
                         <p class="headline">Choose a word to draw</p>
@@ -94,10 +94,12 @@
                     </div>
 
                     <simple-draw
-                            v-show="activePlayer === me && !choosingWord && !otherChoosing"
+                            @toolUse="broadcastTool"
+                            v-show="!choosingWord && !otherChoosing"
                             class="draw"
+                            :read-only="activePlayer!==me"
                             ref="draw"
-                            :updateCanvas="activePlayer === me && !choosingWord && !otherChoosing"/>
+                            :updateCanvas="!choosingWord && !otherChoosing"/>
                 </div>
             </div>
             <div class="chat">
@@ -170,11 +172,13 @@
             roundStartTime: 0,
             otherChoosing: false,
             visibleRound: 1,
+            loadRemaining: -1,
             sounds: {
-                correctGuess: new VolumeSound('sounds/correct.ogg'),
-                timeUp: new VolumeSound('sounds/helaas.ogg'),
-                endGame: new VolumeSound('sounds/hoera.ogg'),
-            }
+                correctGuess: new VolumeSound('sounds/game/correct.mp3', 0.05),
+                timeUp: new VolumeSound('sounds/game/timeup.mp3', 0.01),
+                endGame: new VolumeSound('sounds/game/gameend.mp3', 0.01),
+            },
+            sendQueue: [],
         }),
         async mounted() {
             console.log('-------------{MOUNTED}--------------');
@@ -190,7 +194,7 @@
                         me: true,
                     }),
                     others: [],
-                    settings: {rounds: 2, time: 20, language: 'English'},
+                    settings: {rounds: 2, time: 60, language: 'English'},
                 });
             }
 
@@ -208,70 +212,22 @@
             })));
             console.log(this.everyone);
 
-            let loadRemaining = this.others.length;
-            if (loadRemaining === 0)
+            this.loadRemaining = this.others.length;
+            if (this.loadRemaining === 0)
                 this.hostStart();
+
+            //Send at 30/s
+            this.queueInterval = setInterval(() => {
+                if (this.sendQueue.length > 0) {
+                    this.mesh.broadcast(['batch', this.sendQueue.splice(0, this.sendQueue.length)]);
+                }
+            }, 1000 / 60);
+
 
             this.mesh.on('data', (id, data) => {
                 let user = this.everyone.find(user => user.id === id);
                 let [type, ...params] = JSON.parse(data);
-                console.log("Received data", type, params);
-                switch (type) {
-                    case 'loaded':
-                        if (!this.me.host)
-                            break;
-                        if (--loadRemaining <= 0) {
-                            //done loading
-                            this.hostStart();
-                        }
-                        console.log('id', id, 'user', user, 'loaded', params, 'loadRemaining', loadRemaining);
-                        break;
-                    case 'start':
-                        this.clientStart();
-                        break;
-                    case 'startRound':
-                        let player = this.everyone.find(user => user.id === params[0]);
-                        this.generalStartRound(player);
-                        break;
-                    case 'word':
-                        this.setGuessWord(params[0]);
-                        this.generalStartRoundAfterWordChoice();
-                        break;
-                    case 'wordHint':
-                        this.setWordHint(params[0]);
-                        break;
-                    case 'chat':
-                        this.submitChatText(user, params[0]);
-                        break;
-                    case 'kicked':
-                        if (params[0] === this.me.id) {
-                            setInterval(() => {
-                                this.sounds.timeUp.play(1);
-                            }, 600);
-                            this.mesh.destroy();
-                            this.$router.push('/kicked?msg=' + params[1]);
-                        } else {
-                            this.addKickedMessage(user);
-                        }
-                        break;
-                    case 'devtools':
-                        this.chatMessages.push({
-                            id: Math.floor(Math.random() * 1000000),
-                            type: 'event',
-                            color: 'maroon',
-                            text: user.name + (params[0] ? ' opened the console! 😡' : 'has closed the console 👌'),
-                            user,
-                        });
-                        break;
-                    case 'endRound':
-                        console.log("Endround", params[0]);
-                        for (let {id: userId, rounds} of params[0]) {
-                            let user = this.everyone.find(u => u.id === userId);
-                            user.rounds = rounds;
-                        }
-                        this.endRound();
-                        break;
-                }
+                this.handleData(user, type, ...params);
             });
             this.mesh.on('disconnect', id => {
                 let user = this.everyone.find(u => u.id === id);
@@ -318,6 +274,78 @@
             }
         },
         methods: {
+            handleData(user, type, ...params) {
+                // console.log("handling:", type, params);
+                // console.log("Received data", type, params);
+                switch (type) {
+                    case 'loaded':
+                        if (!this.me.host)
+                            break;
+                        if (--this.loadRemaining <= 0) {
+                            //done loading
+                            this.hostStart();
+                        }
+                        break;
+                    case 'start':
+                        this.clientStart();
+                        break;
+                    case 'startRound':
+                        let player = this.everyone.find(user => user.id === params[0]);
+                        this.generalStartRound(player);
+                        break;
+                    case 'word':
+                        this.setGuessWord(params[0]);
+                        this.generalStartRoundAfterWordChoice();
+                        break;
+                    case 'wordHint':
+                        this.setWordHint(params[0]);
+                        break;
+                    case 'chat':
+                        this.submitChatText(user, params[0]);
+                        break;
+                    case 'batch':
+                        for (let [subType, ...subParams] of params[0])
+                            this.handleData(user, subType, ...subParams);
+                        break;
+                    case 'kicked':
+                        if (params[0] === this.me.id) {
+                            setInterval(() => {
+                                this.sounds.timeUp.play(1);
+                            }, 600);
+                            this.mesh.destroy();
+                            this.$router.push('/kicked?msg=' + params[1]);
+                        } else {
+                            this.addKickedMessage(user);
+                        }
+                        break;
+                    case 'toolUse':
+                        this.$refs.draw.applyToolUse(params[0]);
+                        break;
+                    case 'devtools':
+                        this.chatMessages.push({
+                            id: Math.floor(Math.random() * 1000000),
+                            type: 'event',
+                            color: 'maroon',
+                            text: user.name + (params[0] ? ' opened the console! 😡' : 'has closed the console 👌'),
+                            user,
+                        });
+                        break;
+                    case 'endRound':
+                        console.log("Endround", params[0]);
+                        for (let {id: userId, rounds} of params[0]) {
+                            let user = this.everyone.find(u => u.id === userId);
+                            user.rounds = rounds;
+                        }
+                        this.endRound();
+                        break;
+                }
+            },
+            broadcastTool(e) {
+                // return;
+                //Only send when me is drawing
+                if (this.activePlayer === this.me)
+                    this.sendQueue.push(['toolUse', e]);
+            },
             hostStart() {
                 console.log("[HOST START]");
                 //All users are loaded in at this point
@@ -361,6 +389,10 @@
 
                 if (this.activePlayer === this.me) {
                     this.chooseWord();
+                    //debug
+                    // setTimeout(() => {
+                    //     this.startRound('ladder')
+                    // }, 100);
                 } else {
                     this.otherChoosing = true;
                 }
@@ -524,7 +556,9 @@
                 //Rank 1 to total, rank of guess
                 //Total is amount of users with correct guesses there are
                 if (isArtist) {
-                    return 100 + (guesses / total * 170)
+                    if (guesses > 0)
+                        return 100 + (guesses / total * 170);
+                    return 0
                 } else {
                     console.log({isArtist, guessTime, totalTime, rank, guesses, total, guessedRight});
                     if (!guessedRight)
@@ -660,6 +694,7 @@
             },
         },
         beforeDestroy() {
+            clearInterval(this.queueInterval);
             clearTimeout(this.chooseTimeout);
             for (let timeout of this.roundTimeouts)
                 clearTimeout(timeout);
@@ -908,7 +943,6 @@
         height: 580px;
         background-color: rgba(255, 255, 255, 0.25);
         border-radius: 10px;
-        overflow: hidden;
         box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.3);
     }
 

@@ -6,8 +6,6 @@
         >
             <canvas class="canvas"
                     ref="canvas"
-                    :width="canvasWidth"
-                    :height="canvasHeight"
                     @touchstart="startTouch"
                     @mousedown="startMove"
                     @resize="canvasResize"
@@ -16,7 +14,7 @@
                 Canvas is not supported
             </canvas>
         </div>
-        <div class="controls" v-if="showControls">
+        <div class="controls" v-if="showControls" :style="`pointer-events: ${readOnly ? 'none' : 'all'}`">
             <div class="colors">
                 <v-color-picker v-show="showColorPicker" class="color-picker" v-model="pickedColor"/>
                 <div class="selected-color" :style="`background-color: ${activeRgb}`"
@@ -55,9 +53,7 @@
 </template>
 
 <script>
-    import CommandStack from "@/js/CommandStack";
-    import DrawableCommand from "@/js/DrawableCommand";
-    import ClearCommand from "@/js/ClearCommand";
+    import UndoStack from "@/js/UndoStack";
 
 
     export default {
@@ -115,22 +111,23 @@
             brushSizes: [7, 13, 25, 50],
             fingers: {},
             context: null,
-            drawables: [],
+            canvas: null,
             animationId: -1,
             canvasWidth: 10,
             canvasHeight: 10,
+            canvasUpdateInterval: -1,
             commands: [],
             commandIndex: 0,
             shouldPreventContext: false,
             pickedColor: {r: 0, g: 0, b: 0, a: 1},
+            remoteFingers: {},
         }),
         mounted() {
-            console.log(CommandStack);
+            console.log(UndoStack);
             this.activeBrush = this.brushSize;
 
-            let canvas = this.$refs.canvas;
-            this.context = canvas.getContext('2d');
-            this.animationId = requestAnimationFrame(this.render);
+            this.canvas = this.$refs.canvas;
+            this.context = this.getContext();
 
             window.addEventListener('resize', this.canvasResize, false);
             document.addEventListener('keyup', this.handleKey, false);
@@ -143,7 +140,15 @@
             document.addEventListener('contextmenu', this.preventContext, false);
 
             this.updateCursor(this.activeBrush, this.activeColor, this.activeTool);
+            UndoStack.setCanvas(this.canvas);
             this.canvasResize();
+
+            this.canvasUpdateInterval = setInterval(() => {
+                if (this.canvas.width > 0 && this.canvas.height > 0) {
+                    let pixel = this.context.getImageData(0, 0, 1, 1);
+                    this.context.putImageData(pixel, 0, 0);
+                }
+            }, 1000 / 10);
         },
         beforeDestroy() {
             window.removeEventListener('resize', this.canvasResize);
@@ -153,10 +158,67 @@
             document.removeEventListener('mouseup', this.endMove);
             document.removeEventListener('touchend', this.endTouch);
             document.removeEventListener('wheel', this.handleWheel);
-            cancelAnimationFrame(this.animationId);
-            CommandStack.reset();
+            UndoStack.reset();
+            clearInterval(this.canvasUpdateInterval);
         },
         methods: {
+            applyToolUse(toolUse) {
+                switch (toolUse.tool) {
+                    case "clear":
+                        this.clearCanvas(false);
+                        break;
+                    case "brush":
+                    case "eraser":
+                    case "fill":
+                        if (!this.remoteFingers.hasOwnProperty(toolUse.id))
+                            this.remoteFingers[toolUse.id] = {down: true};
+                        // console.log(this.remoteFingers);
+                        let finger = this.remoteFingers[toolUse.id];
+                        // console.log(toolUse);
+                        switch (toolUse.state) {
+                            case "start":
+                                this.startTool(toolUse.x, toolUse.y, finger, toolUse.tool, toolUse.brushSize, false);
+                                if (toolUse.tool === 'fill')
+                                    delete this.remoteFingers[toolUse.id];
+
+                                break;
+                            case "move":
+                                this.moveTool(toolUse.x, toolUse.y, finger, toolUse.tool, false);
+                                break;
+                            case "end":
+                                this.endTool(toolUse.x, toolUse.y, finger, toolUse.tool, false);
+                                delete this.remoteFingers[toolUse.id];
+                                break;
+                        }
+                        break;
+                    case "color":
+                        this.selectColor(...toolUse.color, true, false);
+                        break;
+                    case "brushSize":
+                        this.selectBrush(toolUse.brush, false);
+                        break;
+                    case "undo":
+                        UndoStack.undo();
+                        break;
+                    case "redo":
+                        UndoStack.redo();
+                        break;
+                    default:
+                        console.log("No case set for toolUse:", toolUse);
+                        break;
+                }
+            },
+            getContext({
+                           brushSize = this.activeBrush,
+                           color = this.activeColor,
+                       } = {}) {
+                let context = this.canvas.getContext('2d');
+                context.lineCap = 'round';
+                context.lineJoin = 'round';
+                context.strokeStyle = this.toRgb(...color);
+                context.lineWidth = brushSize;
+                return context;
+            },
             handleWheel(e) {
                 if (e.altKey) {
                     let newSize = this.activeBrush - e.deltaY / 50;
@@ -178,11 +240,7 @@
                     let image = new Image();
                     image.src = url;
                     image.onload = () => {
-                        this.drawables.push({
-                            type: 'image',
-                            position: [x, y],
-                            image,
-                        })
+                        this.context.drawImage(image, x, y);
                     }
                 });
             },
@@ -204,78 +262,63 @@
                     return false;
                 }
             },
-            render() {
-                this.context.fillStyle = 'rgb(255,255,255)';
-                this.context.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
-                this.context.lineCap = 'round';
-                this.context.lineJoin = 'round';
-                // this.context.imageSmoothingEnabled = false;
+            startTool(x, y, finger, tool = this.activeTool, brushSize = this.activeBrush, emit = true) {
+                if (emit) {
+                    finger.id = Math.floor(Math.random() * 999999999);
+                    this.$emit('toolUse', {
+                        tool,
+                        x: Math.floor(x), y: Math.floor(y),
+                        brushSize,
+                        state: 'start',
+                        id: finger.id,
+                    });
+                }
 
-                for (let drawable of this.drawables) {
-                    switch (drawable.type) {
-                        case 'line':
-                            this.context.beginPath();
-                            this.context.strokeStyle = this.toRgb(...drawable.color);
-                            this.context.lineWidth = drawable.brush;
-                            for (let [x, y] of drawable.line)
-                                this.context.lineTo(x, y);
-                            this.context.stroke();
-                            break;
-                        case 'square':
-                            this.context.fillStyle = this.toRgb(...drawable.color);
-                            this.context.fillRect(...drawable.position, ...drawable.shape);
-                            break;
-                        case 'fill':
-                            this.context.drawImage(drawable.canvas, 0, 0);
-                            break;
-                        case 'image':
-                            this.context.drawImage(drawable.image, ...drawable.position);
-                            break;
-                        default:
-                            console.warn("No case set");
-                            break;
-                    }
-                }
-                this.animationId = requestAnimationFrame(this.render);
-            },
-            startTool(x, y, finger, tool = this.activeTool, brushSize = this.activeBrush) {
                 this.showColorPicker = false;
-                if (tool === 'brush') {
-                    let line = [[x, y]];
-                    let drawable = {
-                        type: 'line',
-                        brush: brushSize,
-                        color: this.activeColor,
-                        line,
-                    };
-                    finger.drawable = drawable;
-                    this.drawables.push(drawable);
-                } else if (tool === 'eraser') {
-                    let line = [[x, y]];
-                    let drawable = {
-                        type: 'line',
-                        brush: brushSize,
-                        color: [255, 255, 255, 255],
-                        line,
-                    };
-                    finger.drawable = drawable;
-                    this.drawables.push(drawable);
+                if (tool === 'brush' || tool === 'eraser') {
+                    let color = tool === 'eraser' ? [255, 255, 255, 255] : this.activeColor;
+                    let context = this.getContext({color});
+                    context.beginPath();
+                    context.moveTo(x, y);
+                    context.lineTo(x, y);
+                    context.stroke();
+                    finger.line = [[x, y]];
+                    finger.context = context;
                 } else if (tool === 'fill') {
-                    let now = performance.now();
                     this.fill3(x, y, this.activeColor);
+                    UndoStack.saveState();
                 }
             },
-            moveTool(x, y, finger, tool = this.activeTool) {
-                if (tool === 'brush' || this.activeTool === 'eraser') {
-                    finger.drawable.line.push([x, y]);
+            moveTool(x, y, finger, tool = this.activeTool, emit = true) {
+                if (tool === 'brush' || tool === 'eraser') {
+                    if (emit)
+                        this.$emit('toolUse', {
+                            tool,
+                            x: Math.floor(x), y: Math.floor(y),
+                            state: 'move',
+                            id: finger.id,
+                        });
+                    finger.line.push([x, y]);
+                    finger.context.lineTo(x, y);
+                    finger.context.stroke();
                 } else if (tool === 'fill') {
                 }
             },
-            endTool(x, y, finger, tool = this.activeTool) {
-                if (tool === 'brush' || this.activeTool === 'eraser') {
-                    finger.drawable.line.push([x, y]);
-                    CommandStack.addCommand(new DrawableCommand(this.drawables, finger.drawable));
-                    delete finger.drawable;
+            endTool(x, y, finger, tool = this.activeTool, emit = true) {
+                if (tool === 'brush' || tool === 'eraser') {
+                    if (emit)
+                        this.$emit('toolUse', {
+                            tool,
+                            x: Math.floor(x), y: Math.floor(y),
+                            state: 'end',
+                            id: finger.id,
+                        });
+                    finger.line.push([x, y]);
+                    finger.context.lineTo(x, y);
+                    finger.context.stroke();
+                    UndoStack.saveState();
+                    // delete finger.context;
+                    // delete finger.line;
                 } else if (tool === 'fill') {
                 }
             },
@@ -320,35 +363,20 @@
                     Math.abs(colorA[3] - colorB[3]);
             },
             fill3(startX, startY, replacementColor = this.activeColor) {
+                console.log("FILL THAT CANVAS", startX, startY, replacementColor);
                 startX = Math.floor(startX);
                 startY = Math.floor(startY);
+                const canvasWidth = this.context.canvas.width;
+                const canvasHeight = this.context.canvas.height;
                 //Create duplicate canvas to draw on
-                let image = this.context.getImageData(0, 0, this.canvasWidth, this.canvasHeight);
+                //This line causes problems
+                let image = this.context.getImageData(0, 0, canvasWidth, canvasHeight);
+                let fillImage = this.context.getImageData(0, 0, canvasWidth, canvasHeight);
 
-                //Create canvas where only the filled pixels are colored
-                let fillCanvas = document.createElement('canvas');
-                fillCanvas.width = this.canvasWidth;
-                fillCanvas.height = this.canvasHeight;
-                let fillContext = fillCanvas.getContext('2d');
-                let fillImage = fillContext.getImageData(0, 0, this.canvasWidth, this.canvasHeight);
-
-                let pixelPos = (startY * this.canvasWidth + startX) * 4;
+                let pixelPos = (startY * canvasWidth + startX) * 4;
                 let targetColor = image.data.slice(pixelPos, pixelPos + 4);
 
                 if (this.colorEquals(targetColor, replacementColor)) {
-                    return;
-                }
-
-                let drawable = {
-                    type: 'fill',
-                    canvas: fillCanvas,
-                    color: replacementColor,
-                };
-                CommandStack.executeCommand(new DrawableCommand(this.drawables, drawable));
-
-                if (this.drawables.filter(d => d.type === 'line').length === 0) {
-                    fillContext.fillStyle = `rgba(${replacementColor[0]},${replacementColor[1]},${replacementColor[2]},${replacementColor[3]})`;
-                    fillContext.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
                     return;
                 }
 
@@ -361,7 +389,7 @@
                     image.data[i + 2] === targetColor[2] &&
                     image.data[i + 3] === targetColor[3];
 
-                const cw4 = this.canvasWidth * 4;
+                const cw4 = canvasWidth * 4;
                 const fillPixel = i => {
                     let neighbours = [
                         i, //Also have center pixel in neighbours
@@ -383,7 +411,6 @@
                         fillImage.data[n + 2] = replacementColor[2];
                         fillImage.data[n + 3] = replacementColor[3];
                     }
-                    //down
 
                     image.data[i + 0] = replacementColor[0];
                     image.data[i + 1] = replacementColor[1];
@@ -398,20 +425,20 @@
                     let reachedRight;
                     let [x, y] = stack.pop();
 
-                    pixelPos = (y * this.canvasWidth + x) * 4;
+                    pixelPos = (y * canvasWidth + x) * 4;
                     while (isTargetColor(pixelPos)) {
                         y--;
-                        pixelPos = (y * this.canvasWidth + x) * 4;
+                        pixelPos = (y * canvasWidth + x) * 4;
                     }
                     reachedLeft = false;
                     reachedRight = false;
 
                     while (true) {
                         y++;
-                        pixelPos = (y * this.canvasWidth + x) * 4;
+                        pixelPos = (y * canvasWidth + x) * 4;
 
                         //If y is out of bounds or the pixel isn't the targetColor break this loop
-                        if (!(y < this.canvasHeight && isTargetColor(pixelPos))) {
+                        if (!(y < canvasHeight && isTargetColor(pixelPos))) {
                             break;
                         }
 
@@ -430,7 +457,7 @@
                                 reachedLeft = false;
 
                         //Scan to our right
-                        if (x < this.canvasWidth - 1)
+                        if (x < canvasWidth - 1)
                             //Is pixel to the right target color
                             if (isTargetColor(pixelPos + 4)) {
                                 if (!reachedRight) {
@@ -444,19 +471,37 @@
                         pixelPos += cw4;
                     }
                 }
-                fillContext.putImageData(fillImage, 0, 0);
+                this.context.putImageData(fillImage, 0, 0);
+                // fillContext.putImageData(fillImage, 0, 0);
             },
-            clearCanvas() {
+            clearCanvas(emit = true) {
+                if (emit)
+                    this.$emit('toolUse', {
+                        tool: 'clear',
+                    });
+                this.context.fillStyle = 'rgb(255,255,255)';
+                this.context.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+                UndoStack.saveState();
                 this.showColorPicker = false;
-                CommandStack.executeCommand(new ClearCommand(this.drawables));
+                console.log('Clear canvas', this.canvas.width, this.canvas.height);
             },
             resetCanvas() {
+                this.context.fillStyle = 'white';
+                console.log('Reset canvas', this.canvas.width, this.canvas.height);
+                this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
                 this.showColorPicker = false;
-                CommandStack.reset();
-                this.drawables = [];
+                this.selectColor(...this.colors[1][0]);
+                UndoStack.reset(this.canvas);
+                UndoStack.initializeIfNeeded();
             },
-            selectColor(r, g, b, a = 255, updatePick = true) {
+            selectColor(r, g, b, a = 255, updatePick = true, emit = true) {
+                console.log("Select color", [r, g, b, a], updatePick, emit);
                 this.activeColor = [r, g, b, a];
+                if (emit)
+                    this.$emit('toolUse', {
+                        tool: 'color',
+                        color: this.activeColor,
+                    });
                 if (updatePick) {
                     this.pickedColor = this.colorToPickColor(this.activeColor);
                     this.showColorPicker = false;
@@ -468,10 +513,15 @@
                 this.showColorPicker = false;
                 this.updateCursor(this.activeBrush, this.activeColor, this.activeTool);
             },
-            selectBrush(brushSize) {
+            selectBrush(brushSize, emit = true) {
                 this.activeBrush = brushSize;
                 this.showColorPicker = false;
                 this.updateCursor(this.activeBrush, this.activeColor, this.activeTool);
+                if (emit)
+                    this.$emit('toolUse', {
+                        tool: 'brushSize',
+                        brush: this.activeBrush,
+                    });
             },
             updateCursor(brushSize, color, tool) {
                 if (this.readOnly) {
@@ -506,10 +556,17 @@
             handleKey(e) {
                 if (this.readOnly || !this.showControls) return;
 
-                if (e.code === 'KeyZ' && e.ctrlKey && e.shiftKey)
-                    CommandStack.redo();
-                else if (e.code === 'KeyZ' && e.ctrlKey)
-                    CommandStack.undo();
+                if (e.code === 'KeyZ' && e.ctrlKey && e.shiftKey) {
+                    UndoStack.redo();
+                    this.$emit('toolUse', {
+                        tool: 'redo',
+                    });
+                } else if (e.code === 'KeyZ' && e.ctrlKey) {
+                    UndoStack.undo();
+                    this.$emit('toolUse', {
+                        tool: 'undo',
+                    });
+                }
                 // else if (e.code === 'KeyF')
                 //     this.selectTool('fill');
                 // else if (e.code === 'KeyE')
@@ -594,9 +651,23 @@
             },
             canvasResize() {
                 let canvas = this.$refs.canvas;
+                let image;
+                let keepContents = canvas.width > 0 && canvas.height > 0;
+                if (keepContents)
+                    image = this.context.getImageData(0, 0, canvas.width, canvas.height);
                 let {width, height} = canvas.getBoundingClientRect();
+                canvas.width = width;
+                canvas.height = height;
+                console.log('Clear canvas', this.canvas.width, this.canvas.height);
                 this.canvasWidth = width;
                 this.canvasHeight = height;
+                if (keepContents)
+                    this.context.putImageData(image, 0, 0);
+                if (!keepContents) {
+                    this.resetCanvas();
+                }
+                // UndoStack.resizeCanvas(this.canvas);
+                // UndoStack.initializeIfNeeded();
             },
             toRgb(r, g, b, a) {
                 return `rgba(${r},${g},${b},${a / 255})`
@@ -612,11 +683,16 @@
             brushSize() {
                 this.activeBrush = this.brushSize;
             },
-            activeColor() {
-                this.$emit('colorChange', this.activeColor);
+            activeColor(val, old) {
+                if (!this.colorEquals(val, old))
+                    this.$emit('colorChange', this.activeColor);
             },
             pickedColor() {
-                this.selectColor(...this.pickColorToColor(this.pickedColor), false);
+                let newColor = [...this.pickColorToColor(this.pickedColor)];
+                if (isNaN(newColor[3]) || newColor[3] === 0)
+                    newColor[3] = 255;
+                if (!this.colorEquals(this.activeColor, newColor))
+                    this.selectColor(...newColor, false);
             },
         },
         computed: {
@@ -635,6 +711,8 @@
     .canvas {
         width: 100%;
         height: 100%;
+        max-height: 500px;
+        background-color: gray;
     }
 
     .canvas-container {
@@ -666,6 +744,7 @@
         position: absolute;
         margin-bottom: 40px;
         margin-left: 40px;
+        z-index: 5;
     }
 
     .color-grid {

@@ -44,13 +44,12 @@
         }),
         mounted() {
             console.warn("MOUNTED");
-            if (localStorage.getItem('lastAvatar') !== null) {
-                this.$refs.draw.drawImage(localStorage.lastAvatar, 0, 0);
-            }
             if (localStorage.getItem('lastUserName') !== null) {
                 this.userName = localStorage.lastUserName;
             }
-
+            console.log(this.$refs.draw.$refs.canvas.width);
+            this.$refs.draw.resetCanvas();
+            this.$refs.draw.drawImage(localStorage.lastAvatar, 0, 0);
             this.saveInterval = setInterval(() => {
                 localStorage.lastAvatar = this.$refs.draw.$refs.canvas.toDataURL();
             }, 1000);

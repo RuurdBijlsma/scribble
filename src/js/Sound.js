@@ -30,7 +30,7 @@ export default class Sound extends EventEmitter {
         this.source.connect(this.analyser);
     }
 
-    play(v = 1) {
+    play(v) {
         this.setSource(v);
         this.source.start(0);
         this.source.onended = () => this.stop();
