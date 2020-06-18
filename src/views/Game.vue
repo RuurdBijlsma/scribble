@@ -326,7 +326,7 @@
                             id: Math.floor(Math.random() * 1000000),
                             type: 'event',
                             color: 'maroon',
-                            text: user.name + (params[0] ? ' opened the console! 😡' : 'has closed the console 👌'),
+                            text: user.name + (params[0] ? ' opened the console! 😡' : ' closed the console 👌'),
                             user,
                         });
                         break;
@@ -564,8 +564,8 @@
                     if (!guessedRight)
                         return 0;
                     let timeScore = guessTime / totalTime;
-                    let rankScore = rank / total;
-                    return (0.2 * timeScore + 0.8 * rankScore) * 400;
+                    let rankScore = total / rank;
+                    return (0.2 * timeScore + 0.8 * rankScore) * 250;
                 }
             },
             addKickedMessage(user) {

@@ -163,6 +163,18 @@
         },
         methods: {
             applyToolUse(toolUse) {
+                if (toolUse.tool === undefined) {
+                    //compact move event
+                    let [x, y, id] = toolUse;
+                    let tool = this.remoteFingers[id].tool;
+                    let brushSize = toolUse.brushSize;
+                    toolUse = {
+                        x, y, id,
+                        state: 'move',
+                        tool,
+                        brushSize,
+                    }
+                }
                 switch (toolUse.tool) {
                     case "clear":
                         this.clearCanvas(false);
@@ -174,6 +186,8 @@
                             this.remoteFingers[toolUse.id] = {down: true};
                         // console.log(this.remoteFingers);
                         let finger = this.remoteFingers[toolUse.id];
+                        finger.tool = toolUse.tool;
+                        finger.brushSize = toolUse.brushSize;
                         // console.log(toolUse);
                         switch (toolUse.state) {
                             case "start":
@@ -264,7 +278,7 @@
             },
             startTool(x, y, finger, tool = this.activeTool, brushSize = this.activeBrush, emit = true) {
                 if (emit) {
-                    finger.id = Math.floor(Math.random() * 999999999);
+                    finger.id = Math.floor(Math.random() * 99999);
                     this.$emit('toolUse', {
                         tool,
                         x: Math.floor(x), y: Math.floor(y),
@@ -292,12 +306,7 @@
             moveTool(x, y, finger, tool = this.activeTool, emit = true) {
                 if (tool === 'brush' || tool === 'eraser') {
                     if (emit)
-                        this.$emit('toolUse', {
-                            tool,
-                            x: Math.floor(x), y: Math.floor(y),
-                            state: 'move',
-                            id: finger.id,
-                        });
+                        this.$emit('toolUse', [Math.floor(x), Math.floor(y), finger.id]);
                     finger.line.push([x, y]);
                     finger.context.lineTo(x, y);
                     finger.context.stroke();
@@ -491,6 +500,8 @@
                 this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
                 this.showColorPicker = false;
                 this.selectColor(...this.colors[1][0]);
+                this.selectBrush(13, false);
+                this.selectTool('brush');
                 UndoStack.reset(this.canvas);
                 UndoStack.initializeIfNeeded();
             },

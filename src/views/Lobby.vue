@@ -1,7 +1,10 @@
 <template>
     <div class="lobby">
         <v-card>
-            <v-card-title class="headline">Game lobby - {{$route.query.game}}</v-card-title>
+            <v-card-title class="headline">
+                <v-chip class="public-chip" outlined v-if="isPublic">Public</v-chip>
+                Game lobby - {{$route.query.game}}
+            </v-card-title>
             <v-card-subtitle>Share the link with others to invite them.</v-card-subtitle>
             <div class="settings">
                 <lobby-settings :read-only="!me.host" ref="settings" @change="updateSettings"
@@ -32,6 +35,7 @@
             settings: null,
             mesh: null,
             hostInterval: -1,
+            isPublic: false,
         }),
         async mounted() {
             this.mesh = this.$store.state.mesh;
@@ -43,11 +47,13 @@
             this.me.stream = this.$refs.createUser.getStream();
             this.users.push(this.me);
 
+            this.isPublic = this.$route.query.public === 'true';
             if (!this.$route.query.hasOwnProperty('game')) {
                 console.log("HOST");
                 this.me.host = true;
                 let gameId = (Math.floor(Math.random() * 1679616)).toString(36).padStart(4, '0').toUpperCase();
-                await this.$router.replace({query: {game: gameId}});
+                let query = {game: gameId, public: this.isPublic};
+                await this.$router.replace({query});
             }
             //TEMP::::
             // this.me.host = this.$route.query.host === 'true';
@@ -116,10 +122,7 @@
                 console.log("userinfo", id, 'data', type, params);
             });
 
-            let isPublic = this.$route.query.public === 'true';
-            console.log({isPublic});
-
-            await this.mesh.join(gameId, !isPublic);
+            await this.mesh.join(gameId, !this.isPublic);
             console.log("Joined room", gameId);
             this.mesh.broadcastStream(this.me.stream);
         },
@@ -180,6 +183,10 @@
     }
 </script>
 <style scoped>
+    .public-chip {
+        margin-right: 10px;
+    }
+
     .lobby {
         width: 100%;
         max-width: 1300px;

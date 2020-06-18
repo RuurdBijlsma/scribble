@@ -5,6 +5,12 @@ Vue.use(Vuetify);
 
 export default new Vuetify({
     theme: {
-        dark: false
+        dark: false,
+        themes: {
+            dark: {
+                primary: '#5d45dc',
+                secondary: '#13f31a',
+            },
+        },
     }
 });
