@@ -3,6 +3,7 @@
         <v-card>
             <v-card-title class="headline">
                 <v-chip class="public-chip" outlined v-if="isPublic">Public</v-chip>
+                <v-chip class="public-chip" outlined v-else>Private</v-chip>
                 Game lobby - {{$route.query.game}}
             </v-card-title>
             <v-card-subtitle>Share the link with others to invite them.</v-card-subtitle>
@@ -40,10 +41,9 @@
         async mounted() {
             this.mesh = this.$store.state.mesh;
             console.log("MESH", this.mesh);
-            let socket = await this.mesh.connect('https://api.ruurd.dev');
-            console.log(socket);
+            await this.mesh.connect('https://api.ruurd.dev');
 
-            this.me.id = socket.id;
+            this.me.id = this.mesh.signal.socket.id;
             this.me.stream = this.$refs.createUser.getStream();
             this.users.push(this.me);
 
@@ -73,7 +73,7 @@
 
             });
 
-            this.mesh.on('fullConnect', () => {
+            this.mesh.on('full-connect', () => {
                 console.log("FUlly connected");
                 this.hostInterval = setInterval(() => {
                     this.chooseNewHost();
@@ -122,12 +122,17 @@
                 console.log("userinfo", id, 'data', type, params);
             });
 
-            await this.mesh.join(gameId, !this.isPublic);
+            if (this.me.host) {
+                this.mesh.create(gameId, '', !this.isPublic);
+            } else {
+                await this.mesh.join(gameId);
+            }
             console.log("Joined room", gameId);
             this.mesh.broadcastStream(this.me.stream);
         },
         methods: {
             chooseNewHost() {
+                // console.log("checking for new host", {hostIndex: this.users.findIndex(user => user.host)})
                 //Check if there isn't a host connected already
                 if (this.users.findIndex(user => user.host) === -1 && this.mesh.isFullyConnected()) {
                     console.log(this.users, JSON.stringify(this.users));
