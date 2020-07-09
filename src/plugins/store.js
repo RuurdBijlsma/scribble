@@ -1,13 +1,13 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
-import SimplePeerMesh from "@/js/SimplePeerMesh";
+import MultiPeerMesh from "multi-peer-mesh";
 
 Vue.use(Vuex);
 
 export default new Vuex.Store({
     state: {
         game: {},
-        mesh: new SimplePeerMesh('scribble'),
+        mesh: new MultiPeerMesh('scribble'),
     },
     mutations: {
         game(state, game) {
