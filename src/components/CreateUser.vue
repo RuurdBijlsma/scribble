@@ -25,83 +25,86 @@
 </template>
 
 <script>
-    import SimpleDraw from "@/components/SimpleDraw";
+import SimpleDraw from "@/components/SimpleDraw";
+import rug from 'random-username-generator'
 
-    export default {
-        name: 'CreateUser',
-        components: {SimpleDraw},
-        props: {
-            readOnly: {
-                type: Boolean,
-                default: false,
-            },
+export default {
+    name: 'CreateUser',
+    components: {SimpleDraw},
+    props: {
+        readOnly: {
+            type: Boolean,
+            default: false,
         },
-        data: () => ({
-            color: 'black',
-            userName: '',
-            rules: [v => v.length <= 25 || 'Max 25 characters'],
-            saveInterval: -1,
-        }),
-        mounted() {
-            console.warn("MOUNTED");
-            if (localStorage.getItem('lastUserName') !== null) {
-                this.userName = localStorage.lastUserName;
-            }
-            console.log(this.$refs.draw.$refs.canvas.width);
-            this.$refs.draw.resetCanvas();
-            this.$refs.draw.drawImage(localStorage.lastAvatar, 0, 0);
-            this.saveInterval = setInterval(() => {
-                localStorage.lastAvatar = this.$refs.draw.$refs.canvas.toDataURL();
-            }, 1000);
-        },
-        methods: {
-            highlightColor(color) {
-                this.color = this.$refs.draw.toRgb(...color);
-            },
-            getStream() {
-                return this.$refs.draw.getStream();
-            },
-            getUser() {
-                let avatar = this.$refs.draw.$refs.canvas.toDataURL();
-                return {name: this.userName, avatar};
-            },
-        },
-        watch: {
-            userName(val, old) {
-                localStorage.lastUserName = this.userName;
-                console.log('user emit');
-                this.userName = val.substr(0, 25);
-                this.$emit('userChange', this.userName);
-            }
-        },
-        beforeDestroy() {
-            console.warn("Clearing interval");
-            clearInterval(this.saveInterval);
+    },
+    data: () => ({
+        color: 'black',
+        userName: rug.generate(),
+        rules: [v => v.length <= 25 || 'Max 25 characters'],
+        saveInterval: -1,
+    }),
+    mounted() {
+        console.warn("MOUNTED");
+        if (localStorage.getItem('lastUserName') !== null) {
+            this.userName = localStorage.lastUserName;
         }
+        console.log(this.$refs.draw.$refs.canvas.width);
+        this.$refs.draw.resetCanvas();
+        this.$refs.draw.drawImage(localStorage.lastAvatar, 0, 0);
+        this.saveInterval = setInterval(() => {
+            localStorage.lastAvatar = this.$refs.draw.$refs.canvas.toDataURL();
+        }, 1000);
+        this.$emit('userChange', this.userName);
+        this.$refs.draw.skipColor(Math.floor(Math.random() * 20))
+    },
+    methods: {
+        highlightColor(color) {
+            this.color = this.$refs.draw.toRgb(...color);
+        },
+        getStream() {
+            return this.$refs.draw.getStream();
+        },
+        getUser() {
+            let avatar = this.$refs.draw.$refs.canvas.toDataURL();
+            return {name: this.userName, avatar};
+        },
+    },
+    watch: {
+        userName(val, old) {
+            localStorage.lastUserName = this.userName;
+            console.log('user emit');
+            this.userName = val.substr(0, 25);
+            this.$emit('userChange', this.userName);
+        }
+    },
+    beforeDestroy() {
+        console.warn("Clearing interval");
+        clearInterval(this.saveInterval);
     }
+}
 </script>
 <style scoped>
-    .create-user {
-        padding: 20px;
-        text-align: center;
-    }
+.create-user {
+    padding: 20px;
+    text-align: center;
+}
 
-    .draw-container {
-        display: flex;
-        /*width:220px;*/
-    }
+.draw-container {
+    display: flex;
+    /*width:220px;*/
+}
 
-    .draw-container > .v-btn {
-        margin: 100px 10px;
-    }
+.draw-container > .v-btn {
+    margin: 100px 10px;
+}
 
-    .draw-avatar {
-        height: 200px;
-        width: 200px;
-        border-radius: 50%;
-        overflow: hidden;
-        box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.3);
-        margin: 20px 0;
-        display: inline-block;
-    }
+.draw-avatar {
+    height: 200px;
+    width: 200px;
+    border-radius: 50%;
+    overflow: hidden;
+    box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.3);
+    margin: 20px 0;
+    display: inline-block;
+}
 </style>

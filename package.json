@@ -11,12 +11,13 @@
     "devtools-detect": "^3.0.1",
     "fast-levenshtein": "^2.0.6",
     "multi-peer-mesh": "git+https://git@github.com/ruurdbijlsma/multi-peer-mesh.git",
+    "random-username-generator": "^1.0.4",
     "register-service-worker": "^1.7.1",
     "simple-peer": "^9.7.2",
     "socket.io-client": "^2.3.0",
     "vue": "^2.6.11",
     "vue-router": "^3.3.4",
-    "vuetify": "^2.3.4",
+    "vuetify": "^2.5.1",
     "vuex": "^3.5.1"
   },
   "devDependencies": {

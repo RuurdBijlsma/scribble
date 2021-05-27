@@ -1,6 +1,6 @@
 <template>
     <div class="game">
-        <div class="game-content">
+        <div class="game-content" id="game-content">
             <div class="users">
                 <div class="user-headline">Drawing</div>
                 <div class="now-drawing single-user" v-if="activePlayer">
@@ -703,7 +703,7 @@
         }
     }
 </script>
-<style scoped>
+<style>
     .time-left-bar {
         height: 8px;
         background-color: lime;
@@ -739,14 +739,13 @@
         padding-top: 10px;
     }
 
-    .game-content[data-v-3614b62c] {
-        /*min-width: 1237px;*/
+    #game-content {
         margin: auto 10px;
         display: flex;
         justify-content: center;
     }
 
-    .game-content > div {
+    #game-content > div {
         display: inline-block;
     }
 
